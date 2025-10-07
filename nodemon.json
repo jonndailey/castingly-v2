@@ -1,0 +1,21 @@
+{
+  "watch": [
+    "app/**/*",
+    "components/**/*",
+    "lib/**/*",
+    "public/**/*",
+    "styles/**/*"
+  ],
+  "ext": "ts,tsx,js,jsx,json,css",
+  "ignore": [
+    ".next/**/*",
+    "node_modules/**/*",
+    ".git/**/*",
+    "*.test.ts",
+    "*.test.tsx"
+  ],
+  "exec": "next dev",
+  "env": {
+    "NODE_ENV": "development"
+  }
+}
