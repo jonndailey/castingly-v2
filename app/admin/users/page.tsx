@@ -47,6 +47,8 @@ export default function UsersPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [selectedUsers, setSelectedUsers] = useState<number[]>([])
+  const [bulkAction, setBulkAction] = useState<string>('')
 
   useEffect(() => {
     fetchUsers()
@@ -105,6 +107,48 @@ export default function UsersPage() {
       }
     } catch (error) {
       console.error('Failed to update user status:', error)
+    }
+  }
+
+  const handleBulkAction = async () => {
+    if (!bulkAction || selectedUsers.length === 0) return
+
+    try {
+      const response = await fetch('/api/admin/users/bulk-action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: bulkAction,
+          userIds: selectedUsers,
+        }),
+      })
+
+      if (response.ok) {
+        setSelectedUsers([])
+        setBulkAction('')
+        fetchUsers()
+        fetchStats()
+      }
+    } catch (error) {
+      console.error('Failed to perform bulk action:', error)
+    }
+  }
+
+  const toggleUserSelection = (userId: number) => {
+    setSelectedUsers(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    )
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedUsers.length === users.length) {
+      setSelectedUsers([])
+    } else {
+      setSelectedUsers(users.map(user => user.id))
     }
   }
 
@@ -244,6 +288,46 @@ export default function UsersPage() {
                 </select>
               </div>
             </div>
+
+            {/* Bulk Actions */}
+            {selectedUsers.length > 0 && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-blue-800">
+                    {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''} selected
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <select
+                      value={bulkAction}
+                      onChange={(e) => setBulkAction(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+                    >
+                      <option value="">Select Action</option>
+                      <option value="activate">Activate Users</option>
+                      <option value="deactivate">Deactivate Users</option>
+                      <option value="delete">Delete Users</option>
+                      <option value="export">Export Users</option>
+                    </select>
+                    <Button
+                      onClick={handleBulkAction}
+                      disabled={!bulkAction}
+                      variant="outline"
+                      size="sm"
+                      className={bulkAction === 'delete' ? 'text-red-600 border-red-200 hover:bg-red-50' : ''}
+                    >
+                      Apply
+                    </Button>
+                    <Button
+                      onClick={() => setSelectedUsers([])}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -262,6 +346,14 @@ export default function UsersPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-200">
+                      <th className="text-left py-3 px-4 font-medium text-gray-900 w-12">
+                        <input
+                          type="checkbox"
+                          checked={users.length > 0 && selectedUsers.length === users.length}
+                          onChange={toggleSelectAll}
+                          className="rounded"
+                        />
+                      </th>
                       <th className="text-left py-3 px-4 font-medium text-gray-900">User</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-900">Role</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-900">Status</th>
@@ -279,6 +371,14 @@ export default function UsersPage() {
                         transition={{ delay: index * 0.05 }}
                         className="border-b border-gray-100 hover:bg-gray-50"
                       >
+                        <td className="py-4 px-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedUsers.includes(user.id)}
+                            onChange={() => toggleUserSelection(user.id)}
+                            className="rounded"
+                          />
+                        </td>
                         <td className="py-4 px-4">
                           <div className="flex items-center">
                             <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-purple-400 to-blue-400 flex items-center justify-center text-white font-medium text-sm">
