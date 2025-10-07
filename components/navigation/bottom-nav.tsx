@@ -15,7 +15,11 @@ import {
   Film,
   Grid3X3,
   Video,
-  LogOut
+  LogOut,
+  Shield,
+  Settings,
+  Database,
+  Activity
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import useAuthStore from '@/lib/store/auth-store'
@@ -24,7 +28,7 @@ interface NavItem {
   label: string
   href: string
   icon: React.ReactNode
-  roles?: Array<'actor' | 'agent' | 'casting_director'>
+  roles?: Array<'actor' | 'agent' | 'casting_director' | 'admin'>
 }
 
 // Navigation items for different user roles
@@ -112,6 +116,29 @@ const castingDirectorNavItems: NavItem[] = [
   },
 ]
 
+const adminNavItems: NavItem[] = [
+  {
+    label: 'Dashboard',
+    href: '/admin',
+    icon: <Home className="w-5 h-5" />,
+  },
+  {
+    label: 'Users',
+    href: '/admin/users',
+    icon: <Users className="w-5 h-5" />,
+  },
+  {
+    label: 'System',
+    href: '/admin/system',
+    icon: <Activity className="w-5 h-5" />,
+  },
+  {
+    label: 'Settings',
+    href: '/admin/settings',
+    icon: <Settings className="w-5 h-5" />,
+  },
+]
+
 export const BottomNav: React.FC = () => {
   const pathname = usePathname()
   const { user } = useAuthStore()
@@ -127,6 +154,8 @@ export const BottomNav: React.FC = () => {
         return agentNavItems
       case 'casting_director':
         return castingDirectorNavItems
+      case 'admin':
+        return adminNavItems
       default:
         return []
     }
@@ -134,8 +163,8 @@ export const BottomNav: React.FC = () => {
   
   const navItems = getNavItems()
   
-  // Don't show on non-authenticated pages
-  if (!user || pathname === '/login' || pathname === '/register' || pathname === '/') {
+  // Don't show on non-authenticated pages or admin pages (admin has its own nav)
+  if (!user || pathname === '/login' || pathname === '/register' || pathname === '/' || pathname.startsWith('/admin')) {
     return null
   }
   
@@ -194,6 +223,8 @@ export const SideNav: React.FC = () => {
         return agentNavItems
       case 'casting_director':
         return castingDirectorNavItems
+      case 'admin':
+        return adminNavItems
       default:
         return []
     }
@@ -201,7 +232,8 @@ export const SideNav: React.FC = () => {
   
   const navItems = getNavItems()
   
-  if (!user || pathname === '/login' || pathname === '/register' || pathname === '/') {
+  // Don't show sidebar on non-authenticated pages or admin pages (admin has its own nav)
+  if (!user || pathname === '/login' || pathname === '/register' || pathname === '/' || pathname.startsWith('/admin')) {
     return null
   }
   
@@ -226,6 +258,7 @@ export const SideNav: React.FC = () => {
                 <option value="actor">👤 Actor View</option>
                 <option value="agent">💼 Agent View</option>
                 <option value="casting_director">🎬 CD View</option>
+                <option value="admin">🛡️ Admin View</option>
               </select>
             </div>
           )}

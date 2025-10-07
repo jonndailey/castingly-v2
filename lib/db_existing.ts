@@ -126,8 +126,8 @@ export const auth = {
     );
     
     if (rows[0]) {
-      // Update last login would go here if the table had that field
-      // await query('UPDATE users SET last_login = NOW() WHERE id = ?', [rows[0].id]);
+      // Update last login 
+      await query('UPDATE users SET last_login = NOW() WHERE id = ?', [rows[0].id]);
     }
     
     return rows[0];

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type UserRole = 'actor' | 'agent' | 'casting_director'
+export type UserRole = 'actor' | 'agent' | 'casting_director' | 'admin'
 
 export interface User {
   id: string
@@ -44,7 +44,8 @@ interface RegisterData {
 const DEMO_PASSWORDS: Record<string, string> = {
   'danactor': 'dailey123',
   'christineagent': 'dailey123',
-  'jonnydirector': 'dailey123'
+  'jonnydirector': 'dailey123',
+  'admin': 'admin123'
 }
 
 const DEMO_USERS: Record<string, User> = {
@@ -70,6 +71,14 @@ const DEMO_USERS: Record<string, User> = {
     name: 'Jonny Director',
     role: 'casting_director',
     avatar_url: 'https://ui-avatars.com/api/?name=Jonny+Director&background=FF5722&color=fff',
+    email_verified: true
+  },
+  'admin': {
+    id: '4',
+    email: 'admin',
+    name: 'Admin User',
+    role: 'admin',
+    avatar_url: 'https://ui-avatars.com/api/?name=Admin+User&background=DC2626&color=fff',
     email_verified: true
   }
 }

@@ -41,7 +41,14 @@ export default function LoginPage() {
       // Get the user from the store to determine their role
       const { user } = useAuthStore.getState()
       if (user) {
-        const dashboardPath = user.role === 'casting_director' ? '/casting/dashboard' : `/${user.role}/dashboard`
+        let dashboardPath: string
+        if (user.role === 'casting_director') {
+          dashboardPath = '/casting/dashboard'
+        } else if (user.role === 'admin') {
+          dashboardPath = '/admin'
+        } else {
+          dashboardPath = `/${user.role}/dashboard`
+        }
         router.push(dashboardPath)
       }
     } catch (err) {
@@ -50,11 +57,12 @@ export default function LoginPage() {
   }
   
   // Demo login function
-  const demoLogin = async (role: 'actor' | 'agent' | 'casting_director') => {
+  const demoLogin = async (role: 'actor' | 'agent' | 'casting_director' | 'admin') => {
     const demoAccounts = {
       actor: { email: 'danactor', password: 'dailey123' },
       agent: { email: 'christineagent', password: 'dailey123' },
-      casting_director: { email: 'jonnydirector', password: 'dailey123' }
+      casting_director: { email: 'jonnydirector', password: 'dailey123' },
+      admin: { email: 'admin', password: 'admin123' }
     }
     
     const account = demoAccounts[role]
@@ -169,7 +177,7 @@ export default function LoginPage() {
             <p className="text-center text-sm text-gray-600 mb-4">
               Try a demo account
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <Button
                 onClick={() => demoLogin('actor')}
                 variant="outline"
@@ -190,6 +198,14 @@ export default function LoginPage() {
                 size="sm"
               >
                 Director
+              </Button>
+              <Button
+                onClick={() => demoLogin('admin')}
+                variant="outline"
+                size="sm"
+                className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
+              >
+                🛡️ Admin
               </Button>
             </div>
           </div>
