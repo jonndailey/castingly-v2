@@ -24,10 +24,34 @@ A comprehensive platform built with Next.js 15, TypeScript, and MySQL that conne
 - Set up monitoring and analytics (Grafana integration)
 
 ### Future Integration
-- Integration with DaileyCore authentication system
+- ✅ **DaileyCore authentication system** - Now integrated with RSA JWT
 - Advanced forum system for industry networking
 - Enhanced analytics and user insights
 - Mobile app development
+
+## 🔐 Authentication Integration
+
+Castingly v2 is **fully integrated** with the DAILEY CORE authentication system:
+
+### Features
+- **RSA JWT Authentication**: Uses RS256 algorithm with DAILEY CORE as the authority
+- **Hybrid Authentication**: Supports DAILEY CORE, legacy accounts, and demo users
+- **Automatic Token Validation**: Real-time validation against DAILEY CORE `/auth/validate` endpoint
+- **Token Refresh**: Automatic token refresh for seamless user experience
+- **Visual Status Indicators**: Authentication badges showing current auth source
+- **Role Mapping**: Maps DAILEY CORE roles to Castingly application roles
+
+### Authentication Flow
+1. **Login**: Users authenticate via API which tries DAILEY CORE first
+2. **Token Issuance**: DAILEY CORE issues RSA-signed JWT tokens
+3. **Validation**: Frontend validates tokens against DAILEY CORE
+4. **Fallback**: System supports legacy and demo accounts for development
+5. **Status Display**: UI shows authentication source with color-coded badges
+
+### Developer Features
+- **Role Switching**: Development mode allows quick role switching
+- **Test Users**: Access to real migrated actor accounts for testing
+- **Authentication Status**: Visual indicators in sidebar showing auth source
 
 ## 🏗️ Architecture
 
@@ -189,11 +213,13 @@ View our comprehensive [Beta Release Roadmap](./BETA_RELEASE_ROADMAP.md) for det
 ## 🔒 Security Features
 
 ### Current Security
-- JWT-based authentication
-- Role-based access control
-- Session management
-- Password hashing (SHA256)
-- Protected API routes
+- **DAILEY CORE Integration**: RSA JWT authentication with centralized auth system
+- **JWT-based authentication** with refresh tokens  
+- **Role-based access control** (Actor, Agent, Casting Director, Admin)
+- **Session management** with token validation
+- **Password hashing** (SHA256) for legacy accounts
+- **Protected API routes** with middleware validation
+- **Authentication status indicators** showing auth source (DAILEY CORE/Legacy/Demo)
 
 ### Planned Security Enhancements
 - Multi-factor authentication (MFA)

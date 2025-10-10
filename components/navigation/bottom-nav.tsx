@@ -211,7 +211,7 @@ export const BottomNav: React.FC = () => {
 // Desktop sidebar navigation
 export const SideNav: React.FC = () => {
   const pathname = usePathname()
-  const { user, devMode, switchRole, logout } = useAuthStore()
+  const { user, devMode, switchRole, logout, authSource } = useAuthStore()
   
   const getNavItems = () => {
     if (!user) return []
@@ -246,6 +246,31 @@ export const SideNav: React.FC = () => {
               Castingly
             </h1>
           </div>
+          
+          {/* Authentication status badge */}
+          {user && (
+            <div className="mt-4 px-4">
+              <div className={cn(
+                "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+                authSource === 'dailey-core' 
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  : authSource === 'legacy'
+                  ? "bg-blue-50 text-blue-700 border border-blue-200"
+                  : "bg-amber-50 text-amber-700 border border-amber-200"
+              )}>
+                <div className={cn(
+                  "w-2 h-2 rounded-full animate-pulse",
+                  authSource === 'dailey-core' ? "bg-emerald-500" :
+                  authSource === 'legacy' ? "bg-blue-500" : "bg-amber-500"
+                )} />
+                <span className="text-xs">
+                  {authSource === 'dailey-core' && 'DAILEY CORE Auth'}
+                  {authSource === 'legacy' && 'Legacy Auth'}
+                  {authSource === 'demo' && 'Demo Mode'}
+                </span>
+              </div>
+            </div>
+          )}
           
           {/* Dev mode role switcher */}
           {devMode && (
