@@ -88,11 +88,15 @@ export default function LoginPage() {
           {/* Logo */}
           <div className="text-center mb-8">
             <Link href="/">
-              <h1 className="text-4xl font-heading font-bold gradient-text">
-                Castingly
-              </h1>
+              <div className="flex items-center justify-center gap-3 mb-2">
+                <img src="/favicon-32x32.png" alt="DAILEY CORE" className="w-8 h-8" />
+                <h1 className="text-4xl font-heading font-bold gradient-text">
+                  Castingly
+                </h1>
+              </div>
             </Link>
             <p className="mt-2 text-gray-600">Welcome back</p>
+            <p className="text-xs text-gray-500 mt-1">Powered by DAILEY CORE</p>
           </div>
           
           {/* Form */}

@@ -242,6 +242,7 @@ export const SideNav: React.FC = () => {
       <div className="flex flex-col w-64 min-h-full">
         <div className="flex flex-col flex-grow bg-white border-r border-gray-200 pt-5 pb-4 overflow-y-auto min-h-full">
           <div className="flex items-center flex-shrink-0 px-4">
+            <img src="/dailey-core-logo.png" alt="DAILEY CORE" className="w-6 h-6 mr-3" />
             <h1 className="text-2xl font-heading font-bold gradient-text">
               Castingly
             </h1>
@@ -258,11 +259,14 @@ export const SideNav: React.FC = () => {
                   ? "bg-blue-50 text-blue-700 border border-blue-200"
                   : "bg-amber-50 text-amber-700 border border-amber-200"
               )}>
-                <div className={cn(
-                  "w-2 h-2 rounded-full animate-pulse",
-                  authSource === 'dailey-core' ? "bg-emerald-500" :
-                  authSource === 'legacy' ? "bg-blue-500" : "bg-amber-500"
-                )} />
+                {authSource === 'dailey-core' ? (
+                  <img src="/dailey-core-logo.png" alt="DAILEY CORE" className="w-4 h-4" />
+                ) : (
+                  <div className={cn(
+                    "w-2 h-2 rounded-full animate-pulse",
+                    authSource === 'legacy' ? "bg-blue-500" : "bg-amber-500"
+                  )} />
+                )}
                 <span className="text-xs">
                   {authSource === 'dailey-core' && 'DAILEY CORE Auth'}
                   {authSource === 'legacy' && 'Legacy Auth'}
