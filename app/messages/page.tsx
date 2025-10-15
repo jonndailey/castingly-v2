@@ -21,7 +21,7 @@ import {
   CheckCheck,
   Circle,
   Smile,
-  Image,
+  Image as ImageIcon,
   FileText
 } from 'lucide-react'
 import { AppLayout, PageHeader, PageContent } from '@/components/layouts/app-layout'
@@ -476,8 +476,8 @@ export default function Messages() {
                   <Button variant="ghost" size="sm">
                     <Paperclip className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="sm">
-                    <Image className="w-4 h-4" />
+                  <Button variant="ghost" size="sm" aria-label="Attach image">
+                    <ImageIcon className="w-4 h-4" />
                   </Button>
                   <Button variant="ghost" size="sm">
                     <Smile className="w-4 h-4" />

@@ -6,7 +6,7 @@ import { motion } from 'framer-motion'
 import { 
   Upload,
   Video,
-  Image,
+  Image as ImageIcon,
   FileText,
   Music,
   Plus,
@@ -170,7 +170,7 @@ export default function ActorMedia() {
   const getTypeIcon = (type: string) => {
     switch(type) {
       case 'video': return <Video className="w-4 h-4" />
-      case 'image': return <Image className="w-4 h-4" />
+      case 'image': return <ImageIcon className="w-4 h-4" />
       case 'document': return <FileText className="w-4 h-4" />
       case 'audio': return <Music className="w-4 h-4" />
       default: return <FileText className="w-4 h-4" />
@@ -273,7 +273,7 @@ export default function ActorMedia() {
                   <p className="text-sm text-gray-600">Photos</p>
                   <p className="text-2xl font-bold">{stats.images}</p>
                 </div>
-                <Image className="w-8 h-8 text-blue-400" />
+                <ImageIcon className="w-8 h-8 text-blue-400" />
               </div>
             </CardContent>
           </Card>

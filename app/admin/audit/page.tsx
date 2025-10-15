@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { 
   Activity, 
@@ -68,12 +68,7 @@ export default function AuditLogsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
 
-  useEffect(() => {
-    fetchAuditLogs()
-    fetchStats()
-  }, [currentPage, searchTerm, actionFilter, severityFilter, dateFilter])
-
-  const fetchAuditLogs = async () => {
+  const fetchAuditLogs = useCallback(async () => {
     try {
       const params = new URLSearchParams({
         page: currentPage.toString(),
@@ -95,9 +90,9 @@ export default function AuditLogsPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [actionFilter, currentPage, dateFilter, searchTerm, severityFilter])
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const response = await fetch('/api/admin/audit/stats')
       if (response.ok) {
@@ -107,7 +102,12 @@ export default function AuditLogsPage() {
     } catch (error) {
       console.error('Failed to fetch audit stats:', error)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchAuditLogs()
+    fetchStats()
+  }, [fetchAuditLogs, fetchStats])
 
   const exportLogs = async () => {
     try {

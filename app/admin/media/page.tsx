@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { 
   FileImage, 
@@ -61,12 +61,8 @@ export default function MediaManagementPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [selectedFiles, setSelectedFiles] = useState<number[]>([])
 
-  useEffect(() => {
-    fetchMediaFiles()
-    fetchStats()
-  }, [currentPage, searchTerm, typeFilter, mediaTypeFilter])
-
-  const fetchMediaFiles = async () => {
+  const fetchMediaFiles = useCallback(async () => {
+    setIsLoading(true)
     try {
       const params = new URLSearchParams({
         page: currentPage.toString(),
@@ -87,9 +83,9 @@ export default function MediaManagementPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [currentPage, mediaTypeFilter, searchTerm, typeFilter])
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const response = await fetch('/api/admin/media/stats')
       if (response.ok) {
@@ -99,7 +95,12 @@ export default function MediaManagementPage() {
     } catch (error) {
       console.error('Failed to fetch media stats:', error)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchMediaFiles()
+    fetchStats()
+  }, [fetchMediaFiles, fetchStats])
 
   const deleteMediaFile = async (fileId: number) => {
     try {

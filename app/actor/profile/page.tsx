@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { 
@@ -124,17 +124,17 @@ export default function ActorProfile() {
     alt: `Gallery ${index + 1}`
   }))
   
-  const openImageModal = (src: string, alt: string, gallery: Array<{ src: string; alt: string }>, index: number) => {
+  const openImageModal = useCallback((src: string, alt: string, gallery: Array<{ src: string; alt: string }>, index: number) => {
     setImageGallery(gallery)
     setSelectedImage({ src, alt, index })
-  }
+  }, [])
   
-  const closeImageModal = () => {
+  const closeImageModal = useCallback(() => {
     setSelectedImage(null)
     setImageGallery([])
-  }
+  }, [])
   
-  const goToPreviousImage = () => {
+  const goToPreviousImage = useCallback(() => {
     if (selectedImage && selectedImage.index > 0) {
       const newIndex = selectedImage.index - 1
       setSelectedImage({
@@ -143,9 +143,9 @@ export default function ActorProfile() {
         index: newIndex
       })
     }
-  }
+  }, [selectedImage, imageGallery])
   
-  const goToNextImage = () => {
+  const goToNextImage = useCallback(() => {
     if (selectedImage && selectedImage.index < imageGallery.length - 1) {
       const newIndex = selectedImage.index + 1
       setSelectedImage({
@@ -154,7 +154,7 @@ export default function ActorProfile() {
         index: newIndex
       })
     }
-  }
+  }, [selectedImage, imageGallery])
   
   // Keyboard navigation for modal
   useEffect(() => {
@@ -183,7 +183,7 @@ export default function ActorProfile() {
       document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = 'unset'
     }
-  }, [selectedImage])
+  }, [selectedImage, closeImageModal, goToNextImage, goToPreviousImage])
   
   // Generate a clean URL slug from the user's name
   const generateSlug = (name: string) => {

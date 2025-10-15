@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { 
   Key, 
@@ -52,12 +52,8 @@ export default function PasswordResetsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
 
-  useEffect(() => {
-    fetchPasswordResets()
-    fetchStats()
-  }, [currentPage, searchTerm, statusFilter])
-
-  const fetchPasswordResets = async () => {
+  const fetchPasswordResets = useCallback(async () => {
+    setIsLoading(true)
     try {
       const params = new URLSearchParams({
         page: currentPage.toString(),
@@ -77,9 +73,9 @@ export default function PasswordResetsPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [currentPage, searchTerm, statusFilter])
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const response = await fetch('/api/admin/password-resets/stats')
       if (response.ok) {
@@ -89,7 +85,12 @@ export default function PasswordResetsPage() {
     } catch (error) {
       console.error('Failed to fetch password reset stats:', error)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchPasswordResets()
+    fetchStats()
+  }, [fetchPasswordResets, fetchStats])
 
   const revokeToken = async (tokenId: number) => {
     try {

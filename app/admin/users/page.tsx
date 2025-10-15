@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { 
   Search, 
@@ -50,12 +50,8 @@ export default function UsersPage() {
   const [selectedUsers, setSelectedUsers] = useState<number[]>([])
   const [bulkAction, setBulkAction] = useState<string>('')
 
-  useEffect(() => {
-    fetchUsers()
-    fetchStats()
-  }, [currentPage, searchTerm, selectedRole, selectedStatus])
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
+    setIsLoading(true)
     try {
       const params = new URLSearchParams({
         page: currentPage.toString(),
@@ -76,9 +72,9 @@ export default function UsersPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [currentPage, searchTerm, selectedRole, selectedStatus])
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const response = await fetch('/api/admin/users/stats')
       if (response.ok) {
@@ -88,7 +84,12 @@ export default function UsersPage() {
     } catch (error) {
       console.error('Failed to fetch user stats:', error)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchUsers()
+    fetchStats()
+  }, [fetchUsers, fetchStats])
 
   const handleStatusChange = async (userId: number, newStatus: 'active' | 'inactive') => {
     try {

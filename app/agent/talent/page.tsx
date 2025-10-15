@@ -4,6 +4,118 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Filter, Plus, Star, MapPin, Award, Eye, ChevronRight, Grid, List } from 'lucide-react';
 
+type Talent = {
+  id: string;
+  name: string;
+  age: number;
+  location: string;
+  unionStatus: string;
+  specialties: string[];
+  rating: number;
+  views: number;
+  inRoster: boolean;
+  image: string | null;
+};
+
+const ALL_TALENT: Talent[] = [
+  {
+    id: '1',
+    name: 'Sophia Martinez',
+    age: 28,
+    location: 'Los Angeles, CA',
+    unionStatus: 'SAG-AFTRA',
+    specialties: ['Drama', 'Comedy'],
+    rating: 4.8,
+    views: 245,
+    inRoster: true,
+    image: null,
+  },
+  {
+    id: '2',
+    name: 'David Kim',
+    age: 32,
+    location: 'New York, NY',
+    unionStatus: 'AEA',
+    specialties: ['Theater', 'Musical'],
+    rating: 4.9,
+    views: 189,
+    inRoster: false,
+    image: null,
+  },
+  {
+    id: '3',
+    name: 'Jessica Brown',
+    age: 26,
+    location: 'Chicago, IL',
+    unionStatus: 'Non-Union',
+    specialties: ['Commercial', 'Voice Over'],
+    rating: 4.6,
+    views: 156,
+    inRoster: true,
+    image: null,
+  },
+  {
+    id: '4',
+    name: 'Ryan Thompson',
+    age: 30,
+    location: 'Atlanta, GA',
+    unionStatus: 'SAG-AFTRA',
+    specialties: ['Action', 'Drama'],
+    rating: 4.7,
+    views: 298,
+    inRoster: false,
+    image: null,
+  },
+  {
+    id: '5',
+    name: 'Maria Garcia',
+    age: 24,
+    location: 'Miami, FL',
+    unionStatus: 'Non-Union',
+    specialties: ['Comedy', 'Improv'],
+    rating: 4.5,
+    views: 134,
+    inRoster: false,
+    image: null,
+  },
+  {
+    id: '6',
+    name: 'Alex Chen',
+    age: 29,
+    location: 'San Francisco, CA',
+    unionStatus: 'SAG-AFTRA',
+    specialties: ['Drama', 'Sci-Fi'],
+    rating: 4.8,
+    views: 267,
+    inRoster: true,
+    image: null,
+  },
+  {
+    id: '7',
+    name: 'Emma Wilson',
+    age: 27,
+    location: 'Seattle, WA',
+    unionStatus: 'AEA',
+    specialties: ['Theater', 'Classical'],
+    rating: 4.9,
+    views: 201,
+    inRoster: false,
+    image: null,
+  },
+  {
+    id: '8',
+    name: 'Marcus Johnson',
+    age: 35,
+    location: 'Boston, MA',
+    unionStatus: 'SAG-AFTRA',
+    specialties: ['Drama', 'Historical'],
+    rating: 4.7,
+    views: 312,
+    inRoster: true,
+    image: null,
+  },
+];
+
 export default function AgentTalentPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
@@ -14,114 +126,14 @@ export default function AgentTalentPage() {
     ageRange: '',
     unionStatus: '',
     gender: '',
-    ethnicity: ''
+    ethnicity: '',
   });
 
-  // Mock talent data
-  const allTalent = [
-    {
-      id: '1',
-      name: 'Sophia Martinez',
-      age: 28,
-      location: 'Los Angeles, CA',
-      unionStatus: 'SAG-AFTRA',
-      specialties: ['Drama', 'Comedy'],
-      rating: 4.8,
-      views: 245,
-      inRoster: true,
-      image: null
-    },
-    {
-      id: '2',
-      name: 'David Kim',
-      age: 32,
-      location: 'New York, NY',
-      unionStatus: 'AEA',
-      specialties: ['Theater', 'Musical'],
-      rating: 4.9,
-      views: 189,
-      inRoster: false,
-      image: null
-    },
-    {
-      id: '3',
-      name: 'Jessica Brown',
-      age: 26,
-      location: 'Chicago, IL',
-      unionStatus: 'Non-Union',
-      specialties: ['Commercial', 'Voice Over'],
-      rating: 4.6,
-      views: 156,
-      inRoster: true,
-      image: null
-    },
-    {
-      id: '4',
-      name: 'Ryan Thompson',
-      age: 30,
-      location: 'Atlanta, GA',
-      unionStatus: 'SAG-AFTRA',
-      specialties: ['Action', 'Drama'],
-      rating: 4.7,
-      views: 298,
-      inRoster: false,
-      image: null
-    },
-    {
-      id: '5',
-      name: 'Maria Garcia',
-      age: 24,
-      location: 'Miami, FL',
-      unionStatus: 'Non-Union',
-      specialties: ['Comedy', 'Improv'],
-      rating: 4.5,
-      views: 134,
-      inRoster: false,
-      image: null
-    },
-    {
-      id: '6',
-      name: 'Alex Chen',
-      age: 29,
-      location: 'San Francisco, CA',
-      unionStatus: 'SAG-AFTRA',
-      specialties: ['Drama', 'Sci-Fi'],
-      rating: 4.8,
-      views: 267,
-      inRoster: true,
-      image: null
-    },
-    {
-      id: '7',
-      name: 'Emma Wilson',
-      age: 27,
-      location: 'Seattle, WA',
-      unionStatus: 'AEA',
-      specialties: ['Theater', 'Classical'],
-      rating: 4.9,
-      views: 201,
-      inRoster: false,
-      image: null
-    },
-    {
-      id: '8',
-      name: 'Marcus Johnson',
-      age: 35,
-      location: 'Boston, MA',
-      unionStatus: 'SAG-AFTRA',
-      specialties: ['Drama', 'Historical'],
-      rating: 4.7,
-      views: 312,
-      inRoster: true,
-      image: null
-    }
-  ];
-
-  const [talent, setTalent] = useState(allTalent);
+  const [talent, setTalent] = useState<Talent[]>(ALL_TALENT);
 
   useEffect(() => {
     // Filter talent based on search and filters
-    let filtered = allTalent;
+    let filtered = ALL_TALENT;
     
     if (searchQuery) {
       filtered = filtered.filter(t => 

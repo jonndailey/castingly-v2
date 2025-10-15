@@ -8,7 +8,7 @@ import {
   Upload,
   Video,
   FileText,
-  Image,
+  Image as ImageIcon,
   Link,
   CheckCircle,
   AlertCircle,
@@ -348,7 +348,7 @@ export default function ActorSubmit() {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex items-center gap-3">
-                        <Image className="w-5 h-5 text-gray-600" />
+                        <ImageIcon className="w-5 h-5 text-gray-600" />
                         <div>
                           <p className="font-medium">Headshot</p>
                           <p className="text-sm text-gray-600">Use primary headshot from profile</p>
