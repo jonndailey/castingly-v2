@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Avatar } from '@/components/ui/avatar'
+import { ForumActivityPanel } from '@/components/forum/forum-activity-panel'
 import useAuthStore from '@/lib/store/auth-store'
 import { useActorProfile } from '@/lib/hooks/useActorData'
 
@@ -102,6 +103,26 @@ export default function ActorProfile() {
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string; index: number } | null>(null)
   const [imageGallery, setImageGallery] = useState<Array<{ src: string; alt: string }>>([])
+
+  const headshots = (actorData?.media?.headshots ?? []).filter(
+    (entry): entry is typeof entry & { media_url: string } =>
+      typeof entry.media_url === 'string' && entry.media_url.length > 0
+  )
+  const headshotGallery = headshots.map((item, index) => ({
+    src: `/api/media/images${item.media_url.replace('/downloaded_images', '')}`,
+    alt: `Headshot ${index + 1}`
+  }))
+  const primaryHeadshot = headshots[0]
+  const galleryMedia = (actorData?.media?.all ?? []).filter(
+    (entry): entry is typeof entry & { media_url: string } =>
+      entry.media_type === 'gallery' &&
+      typeof entry.media_url === 'string' &&
+      entry.media_url.length > 0
+  )
+  const galleryImages = galleryMedia.map((item, index) => ({
+    src: `/api/media/images${item.media_url.replace('/downloaded_images', '')}`,
+    alt: `Gallery ${index + 1}`
+  }))
   
   const openImageModal = (src: string, alt: string, gallery: Array<{ src: string; alt: string }>, index: number) => {
     setImageGallery(gallery)
@@ -304,7 +325,7 @@ export default function ActorProfile() {
                 {/* Profile Photo */}
                 <div className="flex flex-col items-center">
                   <Avatar
-                    src={actorData?.media?.headshots?.[0]?.media_url ? `/api/media/images${actorData.media.headshots[0].media_url.replace('/downloaded_images', '')}` : user?.avatar_url}
+                    src={primaryHeadshot ? `/api/media/images${primaryHeadshot.media_url.replace('/downloaded_images', '')}` : user?.avatar_url}
                     alt={actorData?.name || ''}
                     fallback={actorData?.name || ''}
                     size="xl"
@@ -373,7 +394,18 @@ export default function ActorProfile() {
             </CardContent>
           </Card>
         </motion.div>
-        
+
+        {user && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="mb-8"
+          >
+            <ForumActivityPanel userId={user.id} />
+          </motion.div>
+        )}
+
         {/* Tabs */}
         <div className="mb-6">
           <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
@@ -550,35 +582,28 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
-                    {actorData?.media?.headshots?.map((photo, index) => {
-                      const headshotGallery = actorData?.media?.headshots?.map((p, i) => ({
-                        src: `/api/media/images${p.media_url.replace('/downloaded_images', '')}`,
-                        alt: `Headshot ${i + 1}`
-                      })) || []
-                      
-                      return (
-                        <div 
-                          key={index} 
-                          className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => openImageModal(
-                            `/api/media/images${photo.media_url.replace('/downloaded_images', '')}`,
-                            `Headshot ${index + 1}`,
-                            headshotGallery,
-                            index
-                          )}
-                        >
-                          <img
-                            src={`/api/media/images${photo.media_url.replace('/downloaded_images', '')}`}
-                            alt={`Headshot ${index + 1}`}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                              e.currentTarget.parentElement.classList.add('bg-gray-300');
-                            }}
-                          />
-                        </div>
-                      )
-                    })}
+                    {headshots.map((photo, index) => (
+                      <div 
+                        key={photo.id || index} 
+                        className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => openImageModal(
+                          `/api/media/images${photo.media_url.replace('/downloaded_images', '')}`,
+                          `Headshot ${index + 1}`,
+                          headshotGallery,
+                          index
+                        )}
+                      >
+                        <img
+                          src={`/api/media/images${photo.media_url.replace('/downloaded_images', '')}`}
+                          alt={`Headshot ${index + 1}`}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.parentElement?.classList.add('bg-gray-300');
+                          }}
+                        />
+                      </div>
+                    ))}
                     <button className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-gray-400">
                       <Plus className="w-6 h-6 text-gray-400" />
                     </button>
@@ -594,35 +619,28 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
-                    {actorData?.media?.all?.filter(media => media.media_type === 'gallery')?.map((photo, index) => {
-                      const galleryPhotos = actorData?.media?.all?.filter(media => media.media_type === 'gallery')?.map((p, i) => ({
-                        src: `/api/media/images${p.media_url.replace('/downloaded_images', '')}`,
-                        alt: `Gallery ${i + 1}`
-                      })) || []
-                      
-                      return (
-                        <div 
-                          key={index} 
-                          className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => openImageModal(
-                            `/api/media/images${photo.media_url.replace('/downloaded_images', '')}`,
-                            `Gallery ${index + 1}`,
-                            galleryPhotos,
-                            index
-                          )}
-                        >
-                          <img
-                            src={`/api/media/images${photo.media_url.replace('/downloaded_images', '')}`}
-                            alt={`Gallery ${index + 1}`}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                              e.currentTarget.parentElement.classList.add('bg-gray-300');
-                            }}
-                          />
-                        </div>
-                      )
-                    })}
+                    {galleryMedia.map((photo, index) => (
+                      <div 
+                        key={photo.id || index} 
+                        className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => openImageModal(
+                          `/api/media/images${photo.media_url.replace('/downloaded_images', '')}`,
+                          `Gallery ${index + 1}`,
+                          galleryImages,
+                          index
+                        )}
+                      >
+                        <img
+                          src={`/api/media/images${photo.media_url.replace('/downloaded_images', '')}`}
+                          alt={`Gallery ${index + 1}`}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.parentElement?.classList.add('bg-gray-300');
+                          }}
+                        />
+                      </div>
+                    ))}
                     <button className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-gray-400">
                       <Plus className="w-6 h-6 text-gray-400" />
                     </button>

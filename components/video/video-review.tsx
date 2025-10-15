@@ -63,7 +63,7 @@ const VideoReview: React.FC<VideoReviewProps> = ({
   
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const controlsTimeoutRef = useRef<NodeJS.Timeout>()
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
   const currentSubmission = submissions[currentIndex]
   

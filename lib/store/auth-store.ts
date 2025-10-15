@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { daileyCoreAuth } from '@/lib/auth/dailey-core'
 
-export type UserRole = 'actor' | 'agent' | 'casting_director' | 'admin'
+export type UserRole = 'actor' | 'agent' | 'casting_director' | 'admin' | 'investor'
 
 export interface User {
   id: string
@@ -11,11 +12,18 @@ export interface User {
   avatar_url?: string
   phone?: string
   email_verified: boolean
+  forum_display_name?: string | null
+  forum_signature?: string | null
+  is_verified_professional?: boolean
+  is_investor?: boolean
+  forum_last_seen_at?: string | null
 }
 
 interface AuthState {
   user: User | null
   token: string | null
+  refreshToken: string | null
+  authSource: 'dailey-core' | 'legacy' | 'demo' | null
   isLoading: boolean
   error: string | null
   
@@ -26,11 +34,13 @@ interface AuthState {
   // Actions
   login: (email: string, password: string) => Promise<void>
   register: (data: RegisterData) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   updateUser: (user: Partial<User>) => void
   switchRole: (role: UserRole) => void
   toggleDevMode: () => void
   clearError: () => void
+  validateSession: () => Promise<boolean>
+  refreshTokens: () => Promise<boolean>
 }
 
 interface RegisterData {
@@ -89,6 +99,8 @@ const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       token: null,
+      refreshToken: null,
+      authSource: null,
       isLoading: false,
       error: null,
       devMode: process.env.NODE_ENV === 'development',
@@ -98,37 +110,39 @@ const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null })
         
         try {
-          // First try the real API
-          console.log('Attempting login for:', email)
+          console.log('🎭 Castingly Login Attempt:', email)
+          
+          // First try the API (which handles both Dailey Core and legacy auth)
           const response = await fetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
           })
           
-          console.log('API Response status:', response.status)
           const data = await response.json()
-          console.log('API Response data:', data)
+          console.log('🎭 API Response:', { status: response.status, source: data.source })
           
           if (!response.ok) {
-            // First try demo users if API fails
+            // Try demo users if API fails
             const demoUser = DEMO_USERS[email]
             const demoPassword = DEMO_PASSWORDS[email]
             
             if (demoUser && demoPassword === password) {
-              // Demo login successful
+              console.log('🎭 Demo login successful:', email)
               const token = 'demo-token-' + Date.now()
               
               set({ 
                 user: demoUser, 
                 token, 
+                refreshToken: null,
+                authSource: 'demo',
                 isLoading: false,
                 originalUser: demoUser
               })
-              return; // Early return for demo users
+              return;
             }
             
-            // If not a demo user and API failed, show the API error
+            // No demo user found, show API error
             set({ 
               error: data.error || 'Invalid username or password', 
               isLoading: false 
@@ -136,16 +150,19 @@ const useAuthStore = create<AuthState>()(
             throw new Error(data.error || 'Invalid credentials')
           }
           
-          if (response.ok) {
-            // Successful API login
-            set({ 
-              user: data.user, 
-              token: data.token, 
-              isLoading: false,
-              originalUser: data.user
-            })
-          }
+          // Successful API login
+          console.log('✅ Login successful via:', data.source)
+          set({ 
+            user: data.user, 
+            token: data.token,
+            refreshToken: data.refresh_token || null,
+            authSource: data.source as 'dailey-core' | 'legacy',
+            isLoading: false,
+            originalUser: data.user
+          })
+          
         } catch (error: any) {
+          console.error('❌ Login failed:', error)
           set({ 
             error: error.message || 'Login failed. Please try again.', 
             isLoading: false 
@@ -187,10 +204,24 @@ const useAuthStore = create<AuthState>()(
         }
       },
 
-      logout: () => {
+      logout: async () => {
+        const { refreshToken, authSource } = get()
+        
+        // If using Dailey Core auth, logout from Dailey Core
+        if (authSource === 'dailey-core' && refreshToken) {
+          try {
+            await daileyCoreAuth.logout(refreshToken)
+            console.log('🎭 Logged out from Dailey Core')
+          } catch (error) {
+            console.error('🎭 Logout error:', error)
+          }
+        }
+        
         set({ 
           user: null, 
-          token: null, 
+          token: null,
+          refreshToken: null,
+          authSource: null,
           originalUser: null,
           error: null 
         })
@@ -230,12 +261,73 @@ const useAuthStore = create<AuthState>()(
       },
 
       clearError: () => set({ error: null }),
+
+      validateSession: async (): Promise<boolean> => {
+        const { token, authSource } = get()
+        if (!token) return false
+
+        // For demo tokens, always return true
+        if (authSource === 'demo') return true
+        
+        // For legacy tokens, assume they're valid (they don't have server-side validation)
+        if (authSource === 'legacy') return true
+
+        // For Dailey Core tokens, validate with the server
+        if (authSource === 'dailey-core') {
+          try {
+            const validation = await daileyCoreAuth.validateToken(token)
+            if (validation?.valid) {
+              // Update user data if it changed
+              const castinglyUser = daileyCoreAuth.mapToCastinglyUser(validation.user)
+              set({ user: castinglyUser })
+              return true
+            }
+          } catch (error) {
+            console.error('🎭 Session validation failed:', error)
+          }
+          
+          // Try to refresh the token
+          return await get().refreshTokens()
+        }
+
+        return false
+      },
+
+      refreshTokens: async (): Promise<boolean> => {
+        const { refreshToken, authSource } = get()
+        
+        if (authSource !== 'dailey-core' || !refreshToken) {
+          return false
+        }
+
+        try {
+          const refreshResult = await daileyCoreAuth.refreshToken(refreshToken)
+          if (refreshResult) {
+            const castinglyUser = daileyCoreAuth.mapToCastinglyUser(refreshResult.user)
+            set({
+              user: castinglyUser,
+              token: refreshResult.access_token,
+              refreshToken: refreshResult.refresh_token
+            })
+            console.log('🎭 Tokens refreshed successfully')
+            return true
+          }
+        } catch (error) {
+          console.error('🎭 Token refresh failed:', error)
+        }
+
+        // Refresh failed, logout user
+        await get().logout()
+        return false
+      },
     }),
     {
       name: 'castingly-auth',
       partialize: (state) => ({ 
         user: state.user, 
         token: state.token,
+        refreshToken: state.refreshToken,
+        authSource: state.authSource,
         devMode: state.devMode 
       }),
     }

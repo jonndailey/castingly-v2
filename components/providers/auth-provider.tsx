@@ -41,10 +41,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
       router.push('/login')
     } else if (user && (pathname === '/login' || pathname === '/register')) {
       // User is logged in but trying to access auth pages
-      const dashboardPath = user.role === 'casting_director' 
-        ? '/casting/dashboard' 
-        : `/${user.role}/dashboard`
-      router.push(dashboardPath)
+      // Only redirect to role-specific dashboard for non-admin users
+      if (user.role === 'admin') {
+        // Admin users can navigate freely - redirect to home page
+        router.push('/')
+      } else {
+        const dashboardPath = user.role === 'casting_director' 
+          ? '/casting/dashboard' 
+          : `/${user.role}/dashboard`
+        router.push(dashboardPath)
+      }
     }
   }, [user, pathname, router, isHydrated])
 

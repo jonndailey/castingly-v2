@@ -766,7 +766,7 @@ export default function AgentContracts() {
                           <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
                             <p className="text-xs font-medium text-yellow-700 mb-2">Action Required</p>
                             <p className="text-sm text-yellow-800 mb-2">Contract awaiting signature</p>
-                            <Button variant="warning" size="sm" className="w-full">
+                            <Button variant="secondary" size="sm" className="w-full">
                               <AlertCircle className="w-4 h-4 mr-2" />
                               Send Reminder
                             </Button>

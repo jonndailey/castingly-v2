@@ -121,7 +121,7 @@ const generateSubmissions = () => {
       }
     }
     
-    const selectedSpecialties = []
+    const selectedSpecialties: string[] = []
     const numSpecialties = Math.floor(Math.random() * 4) + 1
     for (let j = 0; j < numSpecialties; j++) {
       const specialty = specialties[Math.floor(Math.random() * specialties.length)]
@@ -130,7 +130,7 @@ const generateSubmissions = () => {
       }
     }
     
-    const selectedSkills = []
+    const selectedSkills: string[] = []
     const numSkills = Math.floor(Math.random() * 5)
     for (let j = 0; j < numSkills; j++) {
       const skill = skills[Math.floor(Math.random() * skills.length)]
@@ -747,7 +747,7 @@ export default function CastingSubmissions() {
                                   <Star
                                     key={i}
                                     className={`w-4 h-4 cursor-pointer ${
-                                      i < submission.rating
+                                      i < (submission.rating ?? 0)
                                         ? 'fill-yellow-500 text-yellow-500'
                                         : 'text-gray-300 hover:text-yellow-400'
                                     }`}

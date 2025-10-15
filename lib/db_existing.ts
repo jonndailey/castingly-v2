@@ -42,7 +42,7 @@ export const actors = {
        ORDER BY u.created_at DESC
        LIMIT ? OFFSET ?`,
       [limit, offset]
-    );
+    ) as any[];
     return rows;
   },
 
@@ -54,7 +54,7 @@ export const actors = {
        LEFT JOIN actors a ON u.id = a.user_id
        WHERE u.id = ? AND u.role = 'actor'`,
       [id]
-    );
+    ) as any[];
     return rows[0];
   },
 
@@ -65,7 +65,7 @@ export const actors = {
        WHERE actor_id = ?
        ORDER BY is_primary DESC, id`,
       [actorId]
-    );
+    ) as any[];
     return rows;
   },
 
@@ -80,7 +80,7 @@ export const actors = {
        AND (u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ? OR a.bio LIKE ?)
        ORDER BY u.first_name, u.last_name`,
       [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`]
-    );
+    ) as any[];
     return rows;
   },
 
@@ -94,7 +94,7 @@ export const actors = {
        WHERE u.role = 'actor' AND a.skills LIKE ?
        ORDER BY u.first_name, u.last_name`,
       [`%${skills}%`]
-    );
+    ) as any[];
     return rows;
   },
 
@@ -102,8 +102,8 @@ export const actors = {
   async getCount() {
     const rows = await query(
       `SELECT COUNT(*) as count FROM users WHERE role = 'actor'`
-    );
-    return rows[0].count;
+    ) as Array<{ count: number }>;
+    return rows[0]?.count ?? 0;
   }
 };
 
@@ -113,7 +113,7 @@ export const auth = {
     const rows = await query(
       'SELECT *, CONCAT(first_name, " ", last_name) as name FROM users WHERE email = ?',
       [email.toLowerCase()]
-    );
+    ) as any[];
     return rows[0];
   },
 
@@ -123,7 +123,7 @@ export const auth = {
     const rows = await query(
       'SELECT *, CONCAT(first_name, " ", last_name) as name FROM users WHERE email = ? AND password_hash = ?',
       [email.toLowerCase(), hashedPassword]
-    );
+    ) as any[];
     
     if (rows[0]) {
       // Update last login 
@@ -138,15 +138,15 @@ export const auth = {
     password: string;
     firstName: string;
     lastName: string;
-    role: 'actor' | 'agent' | 'casting_director';
+    role: 'actor' | 'agent' | 'casting_director' | 'admin' | 'investor';
   }) {
     const hashedPassword = crypto.createHash('sha256').update(userData.password).digest('hex');
     
-    const [result] = await query(
+    const result = await query(
       `INSERT INTO users (email, password_hash, first_name, last_name, role)
        VALUES (?, ?, ?, ?, ?)`,
       [userData.email.toLowerCase(), hashedPassword, userData.firstName, userData.lastName, userData.role]
-    );
+    ) as mysql.ResultSetHeader;
     
     const userId = result.insertId;
     

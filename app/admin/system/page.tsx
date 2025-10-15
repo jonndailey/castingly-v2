@@ -9,7 +9,6 @@ import {
   Wifi,
   HardDrive,
   Cpu,
-  Memory,
   Globe,
   AlertTriangle,
   CheckCircle,

@@ -3,10 +3,10 @@ import { actors } from '@/lib/db_existing';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    const { id } = await context.params;
     const actor = await actors.getById(id);
     
     if (!actor) {
@@ -17,12 +17,12 @@ export async function GET(
     }
     
     // Get actor's media
-    const media = await actors.getMedia(id);
+    const media = (await actors.getMedia(id)) as any[];
     
     // Process skills - they're stored as comma-separated strings in existing DB
     let skillsArray = [];
     if (actor.skills && typeof actor.skills === 'string') {
-      skillsArray = actor.skills.split(',').map(s => s.trim()).filter(Boolean);
+      skillsArray = actor.skills.split(',').map((s: string) => s.trim()).filter(Boolean);
     }
     
     // Organize media by type

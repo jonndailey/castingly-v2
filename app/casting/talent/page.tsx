@@ -165,7 +165,7 @@ const generateTalentDatabase = () => {
     
     // Generate specialties
     const numSpecialties = Math.floor(Math.random() * 5) + 2
-    const selectedSpecialties = []
+    const selectedSpecialties: string[] = []
     for (let j = 0; j < numSpecialties; j++) {
       const specialty = specialties[Math.floor(Math.random() * specialties.length)]
       if (!selectedSpecialties.includes(specialty)) {
@@ -175,7 +175,7 @@ const generateTalentDatabase = () => {
     
     // Generate skills
     const numSkills = Math.floor(Math.random() * 7) + 1
-    const selectedSkills = []
+    const selectedSkills: string[] = []
     for (let j = 0; j < numSkills; j++) {
       const skill = skills[Math.floor(Math.random() * skills.length)]
       if (!selectedSkills.includes(skill)) {

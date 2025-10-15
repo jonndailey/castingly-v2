@@ -67,6 +67,12 @@ castingly-v2/
   - Callback and booking management
   - Collaboration tools
 
+## 💬 Forum System
+
+- **Automatic bootstrap**: On first access the platform ensures required tables exist and seeds default categories (`public-forum`, `actor-lounge`, `industry-insights`, `investor-circle`).
+- **Sample content**: Public and actor lounges are pre-populated with welcome threads so teams can test conversation flows immediately.
+- **Access control**: Routes enforce category-level permissions based on the requester’s role (unauthenticated users only reach public discussions).
+
 ## 🎨 Design System
 
 ### Color Palette

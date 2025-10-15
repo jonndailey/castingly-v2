@@ -11,6 +11,7 @@ A comprehensive platform built with Next.js 15, TypeScript, and MySQL that conne
 - ✅ **JWT authentication** with role-based access
 - ✅ **Responsive UI** with mobile-first design
 - ✅ **Real data integration** with MySQL database
+- ✅ **Forum discussions** seeded with sample conversations for public + actor lounges
 - 🔄 **Security hardening** in progress
 - 🔄 **Cloud infrastructure** migration planned
 
@@ -176,6 +177,7 @@ View our comprehensive [Beta Release Roadmap](./BETA_RELEASE_ROADMAP.md) for det
 - `npm run build` - Build for production
 - `npm run start` - Start production server
 - `npm run lint` - Run ESLint
+- `pm2 start ecosystem.config.js --only castingly-v2` - Launch compiled app under PM2
 
 ### Development Features
 - **Hot reload** with fast refresh

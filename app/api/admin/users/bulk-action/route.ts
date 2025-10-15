@@ -26,23 +26,27 @@ export async function POST(request: NextRequest) {
     let message = ''
 
     switch (action) {
-      case 'activate':
-        [result] = await connection.execute(
+      case 'activate': {
+        const [queryResult] = await connection.execute(
           `UPDATE users SET status = 'active', updated_at = NOW() WHERE id IN (${placeholders})`,
           userIds
         )
+        result = queryResult
         message = `${result.affectedRows} users activated successfully`
         break
+      }
 
-      case 'deactivate':
-        [result] = await connection.execute(
+      case 'deactivate': {
+        const [queryResult] = await connection.execute(
           `UPDATE users SET status = 'inactive', updated_at = NOW() WHERE id IN (${placeholders})`,
           userIds
         )
+        result = queryResult
         message = `${result.affectedRows} users deactivated successfully`
         break
+      }
 
-      case 'delete':
+      case 'delete': {
         // First, delete related records to avoid foreign key constraints
         
         // Delete actor media
@@ -92,12 +96,14 @@ export async function POST(request: NextRequest) {
         )
 
         // Finally, delete users
-        [result] = await connection.execute(
+        const [queryResult] = await connection.execute(
           `DELETE FROM users WHERE id IN (${placeholders})`,
           userIds
         )
+        result = queryResult
         message = `${result.affectedRows} users deleted successfully`
         break
+      }
 
       case 'export':
         // Generate CSV data

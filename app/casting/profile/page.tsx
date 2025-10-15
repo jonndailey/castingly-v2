@@ -39,6 +39,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Avatar } from '@/components/ui/avatar'
+import { ForumActivityPanel } from '@/components/forum/forum-activity-panel'
 import useAuthStore from '@/lib/store/auth-store'
 
 // Mock casting director profile data
@@ -622,6 +623,17 @@ export default function CastingProfile() {
             ))}
           </div>
         </div>
+
+        {user && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="mb-8"
+          >
+            <ForumActivityPanel userId={user.id} />
+          </motion.div>
+        )}
         
         {/* Tab Content */}
         <motion.div

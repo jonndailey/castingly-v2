@@ -13,6 +13,8 @@ export default function AgentTalentProfilePage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [isInRoster, setIsInRoster] = useState(false);
+  const baseTabs = ['overview', 'credits', 'media', 'training'] as const;
+  const tabList = isInRoster ? [...baseTabs, 'notes'] : [...baseTabs];
 
   useEffect(() => {
     // Generate mock talent data based on ID
@@ -210,10 +212,10 @@ export default function AgentTalentProfilePage() {
         <div className="bg-white rounded-xl shadow-sm">
           <div className="border-b">
             <div className="flex gap-6 px-6">
-              {['overview', 'credits', 'media', 'training', isInRoster && 'notes'].filter(Boolean).map((tab) => (
+              {tabList.map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => setActiveTab(tab as string)}
+                  onClick={() => setActiveTab(tab)}
                   className={`py-3 px-1 border-b-2 font-medium capitalize ${
                     activeTab === tab
                       ? 'border-primary-600 text-primary-600'

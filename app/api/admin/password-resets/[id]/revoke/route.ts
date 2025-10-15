@@ -11,10 +11,11 @@ const dbConfig = {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const tokenId = parseInt(params.id)
+    const { id } = await context.params
+    const tokenId = parseInt(id, 10)
 
     const connection = await mysql.createConnection(dbConfig)
 

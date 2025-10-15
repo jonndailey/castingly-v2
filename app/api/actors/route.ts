@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     if (search) {
       actorList = await actors.search(search);
     } else if (location) {
-      actorList = await actors.getByLocation(location);
+      actorList = await actors.search(location);
     } else {
       actorList = await actors.getAll(limit, offset);
     }

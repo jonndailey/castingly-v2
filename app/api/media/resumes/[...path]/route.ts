@@ -4,11 +4,11 @@ import path from 'path';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  context: { params: Promise<{ path: string[] }> }
 ) {
   try {
     // Reconstruct the file path
-    const { path: pathSegments } = await params;
+    const { path: pathSegments } = await context.params;
     const filePath = pathSegments.join('/');
     const fullPath = path.join(process.cwd(), 'downloaded_resumes', filePath);
     

@@ -15,8 +15,14 @@ export async function GET() {
     const startTime = Date.now()
 
     // Test database connection
-    let databaseHealth = {
-      status: 'connected' as const,
+    let databaseHealth: {
+      status: 'connected' | 'disconnected' | 'slow'
+      connections: number
+      maxConnections: number
+      responseTime: number
+      uptime: string
+    } = {
+      status: 'connected',
       connections: 0,
       maxConnections: 100,
       responseTime: 0,

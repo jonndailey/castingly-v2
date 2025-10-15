@@ -320,23 +320,18 @@ export default function SubmissionReview() {
   return (
     <AppLayout>
       <PageHeader
-        title={
-          <div className="flex items-center gap-4">
+        title={submission.actor.name}
+        subtitle={`${submission.project.title} - ${submission.project.role}`}
+        actions={
+          <div className="flex gap-2 items-center">
             <Button
               onClick={() => router.back()}
               variant="ghost"
               size="sm"
             >
               <ArrowLeft className="w-4 h-4" />
+              Back
             </Button>
-            <div>
-              <h1 className="text-2xl font-heading font-bold">{submission.actor.name}</h1>
-              <p className="text-gray-600">{submission.project.title} - {submission.project.role}</p>
-            </div>
-          </div>
-        }
-        actions={
-          <div className="flex gap-2">
             <Button
               onClick={() => setIsShortlisted(!isShortlisted)}
               variant={isShortlisted ? 'default' : 'outline'}

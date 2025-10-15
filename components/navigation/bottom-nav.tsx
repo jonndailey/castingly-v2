@@ -9,6 +9,7 @@ import {
   Search, 
   PlusCircle, 
   MessageCircle, 
+  MessageSquare,
   User,
   Briefcase,
   Users,
@@ -28,7 +29,7 @@ interface NavItem {
   label: string
   href: string
   icon: React.ReactNode
-  roles?: Array<'actor' | 'agent' | 'casting_director' | 'admin'>
+  roles?: Array<'actor' | 'agent' | 'casting_director' | 'admin' | 'investor'>
 }
 
 // Navigation items for different user roles
@@ -47,6 +48,11 @@ const actorNavItems: NavItem[] = [
     label: 'Submit',
     href: '/actor/submit',
     icon: <PlusCircle className="w-5 h-5" />,
+  },
+  {
+    label: 'Forum',
+    href: '/forum',
+    icon: <MessageSquare className="w-5 h-5" />,
   },
   {
     label: 'Messages',
@@ -75,6 +81,11 @@ const agentNavItems: NavItem[] = [
     label: 'Submit',
     href: '/agent/submissions',
     icon: <Briefcase className="w-5 h-5" />,
+  },
+  {
+    label: 'Forum',
+    href: '/forum',
+    icon: <MessageSquare className="w-5 h-5" />,
   },
   {
     label: 'Messages',
@@ -110,6 +121,11 @@ const castingDirectorNavItems: NavItem[] = [
     icon: <Grid3X3 className="w-5 h-5" />,
   },
   {
+    label: 'Forum',
+    href: '/forum',
+    icon: <MessageSquare className="w-5 h-5" />,
+  },
+  {
     label: 'Messages',
     href: '/messages',
     icon: <MessageCircle className="w-5 h-5" />,
@@ -126,6 +142,11 @@ const adminNavItems: NavItem[] = [
     label: 'Users',
     href: '/admin/users',
     icon: <Users className="w-5 h-5" />,
+  },
+  {
+    label: 'Forum',
+    href: '/forum',
+    icon: <MessageSquare className="w-5 h-5" />,
   },
   {
     label: 'System',
@@ -154,6 +175,8 @@ export const BottomNav: React.FC = () => {
         return agentNavItems
       case 'casting_director':
         return castingDirectorNavItems
+      case 'investor':
+        return actorNavItems
       case 'admin':
         return adminNavItems
       default:
@@ -170,7 +193,7 @@ export const BottomNav: React.FC = () => {
   
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 md:hidden safe-bottom">
-      <div className="grid grid-cols-5 gap-1 px-2 py-2">
+      <div className="grid grid-flow-col auto-cols-fr gap-1 px-2 py-2">
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href)
           
@@ -223,6 +246,8 @@ export const SideNav: React.FC = () => {
         return agentNavItems
       case 'casting_director':
         return castingDirectorNavItems
+      case 'investor':
+        return actorNavItems
       case 'admin':
         return adminNavItems
       default:
@@ -288,6 +313,7 @@ export const SideNav: React.FC = () => {
                 <option value="agent">💼 Agent View</option>
                 <option value="casting_director">🎬 CD View</option>
                 <option value="admin">🛡️ Admin View</option>
+                <option value="investor">💼 Investor View</option>
               </select>
             </div>
           )}

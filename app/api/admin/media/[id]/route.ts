@@ -11,10 +11,11 @@ const dbConfig = {
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const fileId = parseInt(params.id)
+    const { id } = await context.params
+    const fileId = parseInt(id, 10)
     const { searchParams } = new URL(request.url)
     const type = searchParams.get('type') || 'actor_media' // Default to actor_media
 

@@ -2,9 +2,17 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import useAuthStore from '@/lib/store/auth-store'
 
 export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const { user, logout } = useAuthStore()
+
+  // Development helper to clear auth state
+  const handleClearAuth = async () => {
+    await logout()
+    console.log('🎭 Auth state cleared')
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-teal-50">
@@ -30,12 +38,21 @@ export default function LandingPage() {
               <Link href="/about" className="text-gray-700 hover:text-primary-600 transition-colors">
                 About
               </Link>
-              <Link 
-                href="/login"
-                className="btn-touch bg-primary-600 text-white hover:bg-primary-700"
-              >
-                Sign In
-              </Link>
+              {user ? (
+                <button 
+                  onClick={handleClearAuth}
+                  className="btn-touch bg-red-600 text-white hover:bg-red-700"
+                >
+                  Clear Auth & Sign In
+                </button>
+              ) : (
+                <Link 
+                  href="/login"
+                  className="btn-touch bg-primary-600 text-white hover:bg-primary-700"
+                >
+                  Sign In
+                </Link>
+              )}
             </div>
 
             {/* Mobile Menu Button */}
@@ -62,9 +79,18 @@ export default function LandingPage() {
               <Link href="/features" className="block py-3 text-gray-700">Features</Link>
               <Link href="/pricing" className="block py-3 text-gray-700">Pricing</Link>
               <Link href="/about" className="block py-3 text-gray-700">About</Link>
-              <Link href="/login" className="block btn-touch bg-primary-600 text-white text-center">
-                Sign In
-              </Link>
+              {user ? (
+                <button 
+                  onClick={handleClearAuth}
+                  className="block btn-touch bg-red-600 text-white text-center w-full"
+                >
+                  Clear Auth & Sign In
+                </button>
+              ) : (
+                <Link href="/login" className="block btn-touch bg-primary-600 text-white text-center">
+                  Sign In
+                </Link>
+              )}
             </div>
           </div>
         )}

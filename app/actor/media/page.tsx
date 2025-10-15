@@ -219,7 +219,7 @@ export default function ActorMedia() {
                 </Button>
                 <Button
                   onClick={() => handleDelete(selectedItems[0])}
-                  variant="error"
+                  variant="danger"
                   size="sm"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />

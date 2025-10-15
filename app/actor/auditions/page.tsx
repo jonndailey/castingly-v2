@@ -452,7 +452,7 @@ export default function ActorAuditions() {
                             <Button
                               onClick={() => handleConfirmation(audition.id, false)}
                               size="sm"
-                              variant="error"
+                              variant="danger"
                               className="flex-1"
                             >
                               Decline

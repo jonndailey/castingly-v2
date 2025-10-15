@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    let results = [];
+    let results: any[] = [];
     
     if (name) {
       // Search by name - try different patterns
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       ];
       for (const term of searchTerms) {
         try {
-          const searchResults = await actors.search(term);
+          const searchResults = (await actors.search(term)) as any[];
           if (searchResults && searchResults.length > 0) {
             results = searchResults;
             break;
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       // If no results from search, try getting all actors and filter
       if (results.length === 0) {
         try {
-          const allActors = await actors.getAll(100, 0);
+          const allActors = (await actors.getAll(100, 0)) as any[];
           results = allActors.filter(actor => 
             actor.name && actor.name.toLowerCase().includes(name.toLowerCase())
           );
@@ -50,10 +50,10 @@ export async function GET(request: NextRequest) {
       }
     } else if (skills) {
       // Search by skills
-      results = await actors.getBySkills(skills);
+      results = (await actors.getBySkills(skills)) as any[];
     } else {
       // For location or other searches, use general search
-      results = await actors.search(location || '');
+      results = (await actors.search(location || '')) as any[];
     }
     
     return NextResponse.json({

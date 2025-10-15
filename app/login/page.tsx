@@ -71,7 +71,8 @@ export default function LoginPage() {
     
     // Auto-submit after a short delay
     setTimeout(() => {
-      document.getElementById('login-form')?.requestSubmit()
+      const form = document.getElementById('login-form') as HTMLFormElement | null
+      form?.requestSubmit()
     }, 500)
   }
   

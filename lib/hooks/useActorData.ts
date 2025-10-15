@@ -1,30 +1,46 @@
 import { useState, useEffect } from 'react';
 import useAuthStore from '@/lib/store/auth-store';
 
+export interface ActorMediaEntry {
+  id: string;
+  type?: 'headshot' | 'resume' | 'reel' | 'clip' | 'self_tape';
+  media_type?: string;
+  url?: string;
+  media_url?: string | null;
+  caption?: string | null;
+  is_primary?: boolean;
+  thumbnail_url?: string | null;
+  title?: string | null;
+  [key: string]: unknown;
+}
+
 export interface ActorProfile {
   id: string;
   name: string;
   email: string;
-  avatar_url?: string;
-  bio?: string;
-  location?: string;
+  avatar_url?: string | null;
+  bio?: string | null;
+  location?: string | null;
   skills?: string[];
   performance_skills?: string[];
   languages?: string[];
-  height?: string;
-  eye_color?: string;
-  hair_color?: string;
+  height?: string | null;
+  eye_color?: string | null;
+  hair_color?: string | null;
+  union?: string | null;
+  phone?: string | null;
+  age_range?: string | null;
+  website?: string | null;
+  instagram?: string | null;
+  twitter?: string | null;
   profile_completion?: number;
-  media?: Media[];
-}
-
-export interface Media {
-  id: string;
-  type: 'headshot' | 'resume' | 'reel' | 'clip' | 'self_tape';
-  url: string;
-  caption?: string;
-  is_primary?: boolean;
-  thumbnail_url?: string;
+  resume_url?: string | null;
+  media?: {
+    headshots: ActorMediaEntry[];
+    resumes: ActorMediaEntry[];
+    reels: ActorMediaEntry[];
+    all: ActorMediaEntry[];
+  };
 }
 
 export function useActorProfile(actorId?: string) {

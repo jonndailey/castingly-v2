@@ -11,10 +11,11 @@ const dbConfig = {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const userId = parseInt(params.id)
+    const { id } = await context.params
+    const userId = parseInt(id, 10)
     const { status } = await request.json()
 
     if (!['active', 'inactive', 'pending'].includes(status)) {

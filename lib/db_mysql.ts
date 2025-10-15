@@ -64,7 +64,7 @@ export const actors = {
        ORDER BY u.created_at DESC
        LIMIT ? OFFSET ?`,
       [limit, offset]
-    );
+    ) as any[];
     return rows;
   },
 
@@ -76,7 +76,7 @@ export const actors = {
        LEFT JOIN profiles p ON u.id = p.user_id
        WHERE u.id = ? AND u.role = 'actor'`,
       [id]
-    );
+    ) as any[];
     return rows[0];
   },
 
@@ -87,7 +87,7 @@ export const actors = {
        WHERE user_id = ?
        ORDER BY order_index, created_at`,
       [actorId]
-    );
+    ) as any[];
     return rows;
   },
 
@@ -101,7 +101,7 @@ export const actors = {
        AND (u.name LIKE ? OR u.email LIKE ? OR p.bio LIKE ?)
        ORDER BY u.name`,
       [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`]
-    );
+    ) as any[];
     return rows;
   },
 
@@ -114,7 +114,7 @@ export const actors = {
        WHERE u.role = 'actor' AND p.location LIKE ?
        ORDER BY u.name`,
       [`%${location}%`]
-    );
+    ) as any[];
     return rows;
   },
 
@@ -122,8 +122,8 @@ export const actors = {
   async getCount() {
     const rows = await query(
       `SELECT COUNT(*) as count FROM users WHERE role = 'actor'`
-    );
-    return rows[0].count;
+    ) as Array<{ count: number }>;
+    return rows[0]?.count ?? 0;
   }
 };
 
@@ -133,7 +133,7 @@ export const auth = {
     const rows = await query(
       'SELECT * FROM users WHERE email = ?',
       [email.toLowerCase()]
-    );
+    ) as any[];
     return rows[0];
   },
 
@@ -143,7 +143,7 @@ export const auth = {
     const rows = await query(
       'SELECT * FROM users WHERE email = ? AND password_hash = ?',
       [email.toLowerCase(), hashedPassword]
-    );
+    ) as any[];
     
     if (rows[0]) {
       // Update last login
@@ -161,7 +161,7 @@ export const auth = {
     email: string;
     password: string;
     name: string;
-    role: 'actor' | 'agent' | 'casting_director';
+    role: 'actor' | 'agent' | 'casting_director' | 'admin' | 'investor';
   }) {
     const id = userData.id || crypto.randomUUID();
     const hashedPassword = crypto.createHash('sha256').update(userData.password).digest('hex');

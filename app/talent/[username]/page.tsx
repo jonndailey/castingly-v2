@@ -12,15 +12,34 @@ import {
 } from 'lucide-react'
 
 export default function PublicTalentProfilePage() {
-  const params = useParams()
+  const params = useParams<{ username: string }>()
   const [activeTab, setActiveTab] = useState('about')
   const [showContactModal, setShowContactModal] = useState(false)
-  const [profile, setProfile] = useState(null)
+  const [profile, setProfile] = useState<Record<string, any> | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const headshotList = Array.isArray(profile?.headshots)
+    ? (profile.headshots as Array<{ id: number; url: string; caption?: string }>)
+    : []
+  const galleryList = Array.isArray(profile?.gallery)
+    ? (profile.gallery as Array<{ id: number; url: string; caption?: string }>)
+    : []
+  const reelList = Array.isArray(profile?.reels)
+    ? (profile.reels as Array<{ id: number; title?: string; duration?: string; thumbnail?: string; url?: string }>)
+    : []
+  const experienceList = Array.isArray(profile?.experience)
+    ? (profile.experience as Array<{ id: number; title: string; project: string; type: string; year: string; director: string }>)
+    : []
+  const trainingList = Array.isArray(profile?.training)
+    ? (profile.training as Array<{ id: number; institution: string; focus?: string; degree?: string; year: string }>)
+    : []
+  const skillList = Array.isArray(profile?.skills)
+    ? (profile.skills as string[])
+    : []
 
   // Helper function to convert username back to search for actor
-  const findActorByUsername = async (username) => {
+  const findActorByUsername = async (username: string): Promise<any> => {
     try {
       console.log('Searching for actor with slug:', username)
       
@@ -35,7 +54,7 @@ export default function PublicTalentProfilePage() {
       console.log('Total actors found:', allActorsData.actors?.length)
       
       // Find the best match based on slug generation
-      const generateSlug = (name) => {
+      const generateSlug = (name: string) => {
         return name
           .toLowerCase()
           .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
@@ -45,7 +64,7 @@ export default function PublicTalentProfilePage() {
       }
       
       // Try to find exact match
-      const actor = allActorsData.actors?.find(actor => {
+      const actor = allActorsData.actors?.find((actor: any) => {
         const actorSlug = generateSlug(actor.name)
         console.log(`Comparing actor "${actor.name}" -> slug "${actorSlug}" with "${username}"`)
         return actorSlug === username
@@ -76,19 +95,47 @@ export default function PublicTalentProfilePage() {
     const loadProfile = async () => {
       try {
         setLoading(true)
-        const actorData = await findActorByUsername(params.username)
+        const usernameParam = Array.isArray(params?.username)
+          ? params.username[0]
+          : params?.username ?? ''
+
+        if (!usernameParam) {
+          setError('Talent profile not found')
+          setLoading(false)
+          return
+        }
+
+        const actorData = await findActorByUsername(usernameParam)
         
+        const headshotEntries: Array<{ media_url: string; caption?: string | null }> = Array.isArray(actorData.media?.headshots)
+          ? actorData.media.headshots.filter(
+              (entry: any): entry is { media_url: string; caption?: string } =>
+                typeof entry?.media_url === 'string'
+            )
+          : []
+
+        const galleryEntries: Array<{ media_type: string; media_url: string; caption?: string | null }> = Array.isArray(actorData.media?.all)
+          ? actorData.media.all.filter(
+              (entry: any): entry is { media_type: string; media_url: string; caption?: string } =>
+                entry?.media_type === 'gallery' && typeof entry?.media_url === 'string'
+            )
+          : []
+
+        const reelEntries: Array<{ media_url?: string | null; title?: string | null }> = Array.isArray(actorData.media?.reels)
+          ? actorData.media.reels.filter((entry: any): entry is { media_url?: string | null; title?: string | null } => Boolean(entry))
+          : []
+
         // Transform actor data to profile format
         const transformedProfile = {
-          username: params.username,
+          username: usernameParam,
           name: actorData.name || 'Actor',
           tagline: 'Professional Actor',
           location: actorData.location || 'Los Angeles, CA',
           union: 'Non-Union',
           agency: 'Available for Representation',
           agentName: 'Contact for Details',
-          profileImage: actorData.media?.headshots?.[0] 
-            ? `/api/media/images${actorData.media.headshots[0].media_url.replace('/downloaded_images', '')}` 
+          profileImage: headshotEntries[0]
+            ? `/api/media/images${headshotEntries[0].media_url.replace('/downloaded_images', '')}`
             : `https://ui-avatars.com/api/?name=${encodeURIComponent(actorData.name)}&size=400&background=6366f1&color=fff`,
           coverImage: '/api/placeholder/1200/400',
           bio: actorData.bio || 'Professional actor available for casting opportunities.',
@@ -100,32 +147,32 @@ export default function PublicTalentProfilePage() {
             languages: 1
           },
 
-          headshots: actorData.media?.headshots?.map((headshot, index) => ({
+          headshots: headshotEntries.map((headshot, index) => ({
             id: index + 1,
             url: `/api/media/images${headshot.media_url.replace('/downloaded_images', '')}`,
             caption: headshot.caption || `Headshot ${index + 1}`
-          })) || [],
+          })),
 
-          gallery: actorData.media?.all?.filter(media => media.media_type === 'gallery')?.map((photo, index) => ({
+          gallery: galleryEntries.map((photo, index) => ({
             id: index + 1,
             url: `/api/media/images${photo.media_url.replace('/downloaded_images', '')}`,
             caption: photo.caption || `Gallery ${index + 1}`
-          })) || [],
+          })),
 
-          reels: actorData.media?.reels?.map((reel, index) => ({
+          reels: reelEntries.map((reel: any, index: number) => ({
             id: index + 1,
             title: reel.title || `Demo Reel ${index + 1}`,
             duration: '2:30',
             thumbnail: '/api/placeholder/400/225',
             url: reel.media_url || '#'
-          })) || [],
+          })),
 
           experience: [],
           training: [],
           skills: Array.isArray(actorData.skills) 
             ? actorData.skills 
             : typeof actorData.skills === 'string' 
-              ? actorData.skills.split(',').map(s => s.trim()).filter(Boolean)
+              ? actorData.skills.split(',').map((s: string) => s.trim()).filter(Boolean)
               : [],
 
           physicalAttributes: {
@@ -145,7 +192,8 @@ export default function PublicTalentProfilePage() {
         
         setProfile(transformedProfile)
       } catch (error) {
-        setError(error.message)
+        const message = error instanceof Error ? error.message : 'Failed to load profile'
+        setError(message)
       } finally {
         setLoading(false)
       }
@@ -348,10 +396,10 @@ export default function PublicTalentProfilePage() {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="text-xl font-semibold mb-4">Physical Attributes</h2>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {Object.entries(profile.physicalAttributes).map(([key, value]) => (
+                  {Object.entries(profile.physicalAttributes || {}).map(([key, value]) => (
                     <div key={key}>
                       <p className="text-sm text-gray-500 capitalize">{key}</p>
-                      <p className="font-medium">{value}</p>
+                      <p className="font-medium">{String(value ?? 'Not specified')}</p>
                     </div>
                   ))}
                 </div>
@@ -360,7 +408,7 @@ export default function PublicTalentProfilePage() {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="text-xl font-semibold mb-4">Character Types</h2>
                 <div className="flex flex-wrap gap-2">
-                  {profile.archetypes.map((type) => (
+                  {(Array.isArray(profile.archetypes) ? profile.archetypes : []).map((type: string) => (
                     <span key={type} className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-sm">
                       {type}
                     </span>
@@ -380,8 +428,8 @@ export default function PublicTalentProfilePage() {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="text-xl font-semibold mb-4">Headshots</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {profile.headshots && profile.headshots.length > 0 ? (
-                    profile.headshots.map((headshot) => (
+                  {headshotList.length > 0 ? (
+                    headshotList.map((headshot) => (
                       <div key={headshot.id} className="group cursor-pointer">
                         <div className="aspect-[3/4] bg-gray-200 rounded-lg overflow-hidden">
                           <img 
@@ -401,11 +449,11 @@ export default function PublicTalentProfilePage() {
                 </div>
               </div>
 
-              {profile.gallery && profile.gallery.length > 0 && (
+              {galleryList.length > 0 && (
                 <div className="bg-white rounded-xl shadow-sm p-6">
                   <h2 className="text-xl font-semibold mb-4">Gallery</h2>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {profile.gallery.map((photo) => (
+                    {galleryList.map((photo) => (
                       <div key={photo.id} className="group cursor-pointer">
                         <div className="aspect-[3/4] bg-gray-200 rounded-lg overflow-hidden">
                           <img 
@@ -424,7 +472,7 @@ export default function PublicTalentProfilePage() {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="text-xl font-semibold mb-4">Demo Reels</h2>
                 <div className="grid md:grid-cols-3 gap-4">
-                  {profile.reels.map((reel) => (
+                  {reelList.map((reel) => (
                     <a 
                       key={reel.id}
                       href={reel.url}
@@ -463,7 +511,7 @@ export default function PublicTalentProfilePage() {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="text-xl font-semibold mb-4">Credits</h2>
                 <div className="space-y-4">
-                  {profile.experience.map((credit) => (
+                  {experienceList.map((credit) => (
                     <div key={credit.id} className="flex items-start gap-4 p-4 hover:bg-gray-50 rounded-lg transition-colors">
                       <Film className="w-5 h-5 text-gray-400 mt-0.5" />
                       <div className="flex-grow">
@@ -481,8 +529,8 @@ export default function PublicTalentProfilePage() {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="text-xl font-semibold mb-4">Training & Education</h2>
                 <div className="space-y-4">
-                  {profile.training.map((item, index) => (
-                    <div key={index} className="flex items-start gap-4">
+                  {trainingList.map((item, index) => (
+                    <div key={item.id ?? index} className="flex items-start gap-4">
                       <GraduationCap className="w-5 h-5 text-gray-400 mt-0.5" />
                       <div>
                         <h3 className="font-semibold">{item.institution}</h3>
@@ -505,8 +553,8 @@ export default function PublicTalentProfilePage() {
             >
               <h2 className="text-xl font-semibold mb-4">Special Skills</h2>
               <div className="flex flex-wrap gap-2">
-                {profile.skills && profile.skills.length > 0 ? (
-                  profile.skills.map((skill) => (
+                {skillList.length > 0 ? (
+                  skillList.map((skill) => (
                     <span 
                       key={skill}
                       className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"

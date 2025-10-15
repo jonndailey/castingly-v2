@@ -23,6 +23,33 @@ const avatarVariants = cva(
   }
 )
 
+const AvatarImage = React.forwardRef<
+  React.ElementRef<typeof AvatarPrimitive.Image>,
+  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Image>
+>(({ className, ...props }, ref) => (
+  <AvatarPrimitive.Image
+    ref={ref}
+    className={cn('aspect-square h-full w-full object-cover', className)}
+    {...props}
+  />
+))
+AvatarImage.displayName = AvatarPrimitive.Image.displayName
+
+const AvatarFallback = React.forwardRef<
+  React.ElementRef<typeof AvatarPrimitive.Fallback>,
+  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Fallback>
+>(({ className, ...props }, ref) => (
+  <AvatarPrimitive.Fallback
+    ref={ref}
+    className={cn(
+      'flex h-full w-full items-center justify-center bg-gradient-to-br from-primary-100 to-secondary-100 font-medium text-gray-700',
+      className
+    )}
+    {...props}
+  />
+))
+AvatarFallback.displayName = AvatarPrimitive.Fallback.displayName
+
 interface AvatarProps
   extends React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Root>,
     VariantProps<typeof avatarVariants> {
@@ -50,16 +77,13 @@ const Avatar = React.forwardRef<
         className={cn(avatarVariants({ size }), className)}
         {...props}
       >
-        <AvatarPrimitive.Image
+        <AvatarImage
           src={src}
           alt={alt}
-          className="aspect-square h-full w-full object-cover"
         />
-        <AvatarPrimitive.Fallback
-          className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary-100 to-secondary-100 font-medium text-gray-700"
-        >
+        <AvatarFallback>
           {fallback || getInitials(alt || 'User')}
-        </AvatarPrimitive.Fallback>
+        </AvatarFallback>
       </AvatarPrimitive.Root>
       
       {status && (
@@ -202,4 +226,4 @@ const ProfileAvatar: React.FC<ProfileAvatarProps> = ({
   )
 }
 
-export { Avatar, AvatarGroup, ProfileAvatar, avatarVariants }
+export { Avatar, AvatarGroup, ProfileAvatar, avatarVariants, AvatarImage, AvatarFallback }

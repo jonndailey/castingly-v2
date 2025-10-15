@@ -210,7 +210,7 @@ export default function ActorDashboard() {
                         }}
                       />
                     ) : (
-                      <Avatar size="xl" name={profile.name} />
+                      <Avatar size="xl" alt={profile.name} fallback={profile.name} />
                     )}
                     <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-white rounded-full flex items-center justify-center border-2 border-gray-200">
                       <Camera className="w-4 h-4 text-gray-600" />
@@ -284,7 +284,7 @@ export default function ActorDashboard() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => window.open(profile.resume_url, '_blank')}
+                        onClick={() => window.open(profile.resume_url!, '_blank')}
                       >
                         <FileText className="w-4 h-4 mr-1" />
                         View Resume
