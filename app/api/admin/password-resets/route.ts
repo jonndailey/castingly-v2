@@ -43,8 +43,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const [requests] = await connection.execute(
-      `SELECT 
+    const selectWithMetadata = `SELECT 
         prt.id,
         prt.user_id,
         CONCAT(u.first_name, ' ', u.last_name) as user_name,
@@ -53,14 +52,52 @@ export async function GET(request: NextRequest) {
         prt.created_at,
         prt.expires_at,
         prt.used,
-        prt.used_at
+        prt.used_at,
+        prt.ip_address,
+        prt.user_agent
        FROM password_reset_tokens prt
        JOIN users u ON prt.user_id = u.id
        WHERE ${whereClause}
        ORDER BY prt.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...queryParams, limit, offset]
-    )
+       LIMIT ? OFFSET ?`
+
+    const selectWithoutMetadata = `SELECT 
+        prt.id,
+        prt.user_id,
+        CONCAT(u.first_name, ' ', u.last_name) as user_name,
+        u.email as user_email,
+        prt.token,
+        prt.created_at,
+        prt.expires_at,
+        prt.used,
+        prt.used_at,
+        NULL as ip_address,
+        NULL as user_agent
+       FROM password_reset_tokens prt
+       JOIN users u ON prt.user_id = u.id
+       WHERE ${whereClause}
+       ORDER BY prt.created_at DESC
+       LIMIT ? OFFSET ?`
+
+    let requests: any[] = []
+
+    try {
+      const [rows] = await connection.execute(
+        selectWithMetadata,
+        [...queryParams, limit, offset]
+      )
+      requests = rows as any[]
+    } catch (selectError: any) {
+      if (selectError?.code === 'ER_BAD_FIELD_ERROR') {
+        const [rows] = await connection.execute(
+          selectWithoutMetadata,
+          [...queryParams, limit, offset]
+        )
+        requests = rows as any[]
+      } else {
+        throw selectError
+      }
+    }
 
     const [countResult] = await connection.execute(
       `SELECT COUNT(*) as total 

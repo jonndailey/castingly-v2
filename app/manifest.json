@@ -1,0 +1,16 @@
+{
+  "name": "Castingly",
+  "short_name": "Castingly",
+  "description": "Professional casting platform connecting actors, agents, and casting directors.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#7c3aed",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "32x32",
+      "type": "image/x-icon"
+    }
+  ]
+}

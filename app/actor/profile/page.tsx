@@ -35,7 +35,7 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar } from '@/components/ui/avatar'
 import { ForumActivityPanel } from '@/components/forum/forum-activity-panel'
 import useAuthStore from '@/lib/store/auth-store'
-import { useActorProfile } from '@/lib/hooks/useActorData'
+import { useActorProfile, type ActorMediaEntry } from '@/lib/hooks/useActorData'
 
 // Mock data for the profile
 const profileData = {
@@ -104,25 +104,21 @@ export default function ActorProfile() {
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string; index: number } | null>(null)
   const [imageGallery, setImageGallery] = useState<Array<{ src: string; alt: string }>>([])
 
-  const headshots = (actorData?.media?.headshots ?? []).filter(
-    (entry): entry is typeof entry & { media_url: string } =>
-      typeof entry.media_url === 'string' && entry.media_url.length > 0
+  const headshots = (actorData?.media?.headshots ?? []).filter((entry) =>
+    Boolean(entry.url || entry.signed_url || entry.thumbnail_url)
   )
   const headshotGallery = headshots.map((item, index) => ({
-    src: `/api/media/images${item.media_url.replace('/downloaded_images', '')}`,
-    alt: `Headshot ${index + 1}`
+    src: getMediaUrl(item) ?? '',
+    alt: `Headshot ${index + 1}`,
   }))
-  const primaryHeadshot = headshots[0]
-  const galleryMedia = (actorData?.media?.all ?? []).filter(
-    (entry): entry is typeof entry & { media_url: string } =>
-      entry.media_type === 'gallery' &&
-      typeof entry.media_url === 'string' &&
-      entry.media_url.length > 0
-  )
-  const galleryImages = galleryMedia.map((item, index) => ({
-    src: `/api/media/images${item.media_url.replace('/downloaded_images', '')}`,
-    alt: `Gallery ${index + 1}`
-  }))
+  const primaryHeadshot = headshots[0] ?? null
+
+  const galleryImages = (actorData?.media?.other ?? [])
+    .filter((entry) => Boolean(entry.url || entry.signed_url))
+    .map((item, index) => ({
+      src: getMediaUrl(item) ?? '',
+      alt: item.name || `Gallery ${index + 1}`,
+    }))
   
   const openImageModal = useCallback((src: string, alt: string, gallery: Array<{ src: string; alt: string }>, index: number) => {
     setImageGallery(gallery)
@@ -325,11 +321,11 @@ export default function ActorProfile() {
                 {/* Profile Photo */}
                 <div className="flex flex-col items-center">
                   <Avatar
-                    src={primaryHeadshot ? `/api/media/images${primaryHeadshot.media_url.replace('/downloaded_images', '')}` : user?.avatar_url}
+                    src={primaryHeadshot ? getMediaUrl(primaryHeadshot) : user?.avatar_url}
                     alt={actorData?.name || ''}
                     fallback={actorData?.name || ''}
                     size="xl"
-                    className="w-32 h-32"
+                    className="h-32 w-32"
                   />
                   {isEditing && (
                     <Button size="sm" variant="outline" className="mt-3">
@@ -583,23 +579,23 @@ export default function ActorProfile() {
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
                     {headshots.map((photo, index) => (
-                      <div 
-                        key={photo.id || index} 
+                      <div
+                        key={photo.id || index}
                         className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
                         onClick={() => openImageModal(
-                          `/api/media/images${photo.media_url.replace('/downloaded_images', '')}`,
+                          getMediaUrl(photo) ?? '',
                           `Headshot ${index + 1}`,
                           headshotGallery,
                           index
                         )}
                       >
                         <img
-                          src={`/api/media/images${photo.media_url.replace('/downloaded_images', '')}`}
+                          src={getMediaUrl(photo) ?? ''}
                           alt={`Headshot ${index + 1}`}
-                          className="w-full h-full object-cover"
+                          className="h-full w-full object-cover"
                           onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.parentElement?.classList.add('bg-gray-300');
+                            e.currentTarget.style.display = 'none'
+                            e.currentTarget.parentElement?.classList.add('bg-gray-300')
                           }}
                         />
                       </div>
@@ -619,24 +615,19 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
-                    {galleryMedia.map((photo, index) => (
-                      <div 
-                        key={photo.id || index} 
+                    {galleryImages.map((photo, index) => (
+                      <div
+                        key={`${photo.src}-${index}`}
                         className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => openImageModal(
-                          `/api/media/images${photo.media_url.replace('/downloaded_images', '')}`,
-                          `Gallery ${index + 1}`,
-                          galleryImages,
-                          index
-                        )}
+                        onClick={() => openImageModal(photo.src, photo.alt, galleryImages, index)}
                       >
                         <img
-                          src={`/api/media/images${photo.media_url.replace('/downloaded_images', '')}`}
-                          alt={`Gallery ${index + 1}`}
-                          className="w-full h-full object-cover"
+                          src={photo.src}
+                          alt={photo.alt}
+                          className="h-full w-full object-cover"
                           onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.parentElement?.classList.add('bg-gray-300');
+                            e.currentTarget.style.display = 'none'
+                            e.currentTarget.parentElement?.classList.add('bg-gray-300')
                           }}
                         />
                       </div>
@@ -656,17 +647,30 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {actorData?.media?.reels?.map((reel) => (
-                      <div key={reel.id || reel.media_url} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <Film className="w-5 h-5 text-primary-600" />
-                          <span className="font-medium">{reel.title || 'Demo Reel'}</span>
+                    {(actorData?.media?.reels ?? []).map((reel) => {
+                      const reelUrl = getMediaUrl(reel)
+
+                      return (
+                        <div
+                          key={reel.id}
+                          className="flex items-center justify-between rounded-lg bg-gray-50 p-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Film className="h-5 w-5 text-primary-600" />
+                            <span className="font-medium">{reel.name || 'Demo Reel'}</span>
+                          </div>
+                          {reelUrl && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => window.open(reelUrl, '_blank')}
+                            >
+                              View
+                            </Button>
+                          )}
                         </div>
-                        <Button size="sm" variant="ghost">
-                          View
-                        </Button>
-                      </div>
-                    ))}
+                      )
+                    })}
                     <Button variant="outline" fullWidth>
                       <Upload className="w-4 h-4 mr-2" />
                       Upload Reel
@@ -861,6 +865,10 @@ export default function ActorProfile() {
 
 function cn(...classes: (string | boolean | undefined)[]) {
   return classes.filter(Boolean).join(' ')
+}
+
+function getMediaUrl(entry: ActorMediaEntry | { url?: string | null; signed_url?: string | null; thumbnail_url?: string | null }) {
+  return entry.url || entry.signed_url || entry.thumbnail_url || null
 }
 
 function AnimatePresence({ children, mode }: { children: React.ReactNode, mode?: string }) {

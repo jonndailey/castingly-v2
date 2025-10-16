@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PasswordResetService } from '@/lib/password-reset';
 import { rateLimit } from '@/lib/rate-limit';
+import { sendPasswordResetEmail } from '@/lib/email';
 
 // Rate limiting for password reset requests (max 3 per hour per IP)
 const limiter = rateLimit({
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
       request.headers.get('x-real-ip') ||
       '127.0.0.1';
-    const { success, remaining } = await limiter.check(ip, 3); // 3 requests per hour
+    const { success } = await limiter.check(ip, 3); // 3 requests per hour
 
     if (!success) {
       return NextResponse.json(
@@ -54,20 +55,40 @@ export async function POST(request: NextRequest) {
     // but only send email if user exists
     if (user) {
       try {
-        const resetToken = await PasswordResetService.createResetToken(normalizedEmail);
+        const resetToken = await PasswordResetService.createResetToken(normalizedEmail, {
+          ipAddress: ip,
+          userAgent: request.headers.get('user-agent'),
+        });
         
         if (resetToken) {
-          // TODO: Send email with reset link
-          // For now, we'll log it for development
-          console.log('Password reset token generated:', {
-            email: normalizedEmail,
-            token: resetToken.token,
-            expires: resetToken.expires_at,
-            resetLink: `${process.env.NEXT_PUBLIC_APP_URL}/password-reset?token=${resetToken.token}`
+          const baseUrl =
+            process.env.NEXT_PUBLIC_APP_URL ||
+            process.env.APP_URL ||
+            request.nextUrl.origin;
+
+          const resetLink = `${baseUrl.replace(/\/$/, '')}/password-reset?token=${encodeURIComponent(
+            resetToken.token
+          )}`;
+
+          const emailResult = await sendPasswordResetEmail({
+            to: normalizedEmail,
+            name: user.name,
+            resetLink,
+            expiresAt: resetToken.expires_at,
+            ipAddress: ip,
+            userAgent: request.headers.get('user-agent'),
           });
 
-          // In development, you can access the reset link from the console
-          // In production, this would be sent via email
+          if (!emailResult.delivered && !emailResult.skipped) {
+            console.error('Password reset email failed to send', emailResult.error);
+          }
+
+          if (emailResult.skipped) {
+            console.info('Password reset email delivery skipped; reset link logged for development:', {
+              email: normalizedEmail,
+              resetLink,
+            });
+          }
         }
       } catch (error) {
         console.error('Error generating reset token:', error);

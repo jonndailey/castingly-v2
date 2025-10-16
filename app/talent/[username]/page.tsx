@@ -11,6 +11,11 @@ import {
   Facebook, Youtube, Linkedin, ArrowLeft
 } from 'lucide-react'
 
+const getMediaUrl = (entry: any): string | null => {
+  if (!entry) return null
+  return entry.url || entry.signed_url || entry.thumbnail_url || entry.media_url || null
+}
+
 export default function PublicTalentProfilePage() {
   const params = useParams<{ username: string }>()
   const [activeTab, setActiveTab] = useState('about')
@@ -107,22 +112,20 @@ export default function PublicTalentProfilePage() {
 
         const actorData = await findActorByUsername(usernameParam)
         
-        const headshotEntries: Array<{ media_url: string; caption?: string | null }> = Array.isArray(actorData.media?.headshots)
-          ? actorData.media.headshots.filter(
-              (entry: any): entry is { media_url: string; caption?: string } =>
-                typeof entry?.media_url === 'string'
+        const headshotEntries = Array.isArray(actorData.media?.headshots)
+          ? actorData.media.headshots.filter((entry: any) =>
+              Boolean(entry?.url || entry?.signed_url || entry?.thumbnail_url)
             )
           : []
 
-        const galleryEntries: Array<{ media_type: string; media_url: string; caption?: string | null }> = Array.isArray(actorData.media?.all)
-          ? actorData.media.all.filter(
-              (entry: any): entry is { media_type: string; media_url: string; caption?: string } =>
-                entry?.media_type === 'gallery' && typeof entry?.media_url === 'string'
+        const galleryEntries = Array.isArray(actorData.media?.other)
+          ? actorData.media.other.filter((entry: any) =>
+              Boolean(entry?.url || entry?.signed_url)
             )
           : []
 
-        const reelEntries: Array<{ media_url?: string | null; title?: string | null }> = Array.isArray(actorData.media?.reels)
-          ? actorData.media.reels.filter((entry: any): entry is { media_url?: string | null; title?: string | null } => Boolean(entry))
+        const reelEntries = Array.isArray(actorData.media?.reels)
+          ? actorData.media.reels.filter((entry: any) => Boolean(entry))
           : []
 
         // Transform actor data to profile format
@@ -134,9 +137,8 @@ export default function PublicTalentProfilePage() {
           union: 'Non-Union',
           agency: 'Available for Representation',
           agentName: 'Contact for Details',
-          profileImage: headshotEntries[0]
-            ? `/api/media/images${headshotEntries[0].media_url.replace('/downloaded_images', '')}`
-            : `https://ui-avatars.com/api/?name=${encodeURIComponent(actorData.name)}&size=400&background=6366f1&color=fff`,
+          profileImage: getMediaUrl(headshotEntries[0]) ||
+            `https://ui-avatars.com/api/?name=${encodeURIComponent(actorData.name)}&size=400&background=6366f1&color=fff`,
           coverImage: '/api/placeholder/1200/400',
           bio: actorData.bio || 'Professional actor available for casting opportunities.',
           
@@ -147,16 +149,16 @@ export default function PublicTalentProfilePage() {
             languages: 1
           },
 
-          headshots: headshotEntries.map((headshot, index) => ({
+          headshots: headshotEntries.map((headshot: any, index: number) => ({
             id: index + 1,
-            url: `/api/media/images${headshot.media_url.replace('/downloaded_images', '')}`,
-            caption: headshot.caption || `Headshot ${index + 1}`
+            url: getMediaUrl(headshot) || '#',
+            caption: headshot.caption || headshot.name || `Headshot ${index + 1}`
           })),
 
-          gallery: galleryEntries.map((photo, index) => ({
+          gallery: galleryEntries.map((photo: any, index: number) => ({
             id: index + 1,
-            url: `/api/media/images${photo.media_url.replace('/downloaded_images', '')}`,
-            caption: photo.caption || `Gallery ${index + 1}`
+            url: getMediaUrl(photo) || '#',
+            caption: photo.caption || photo.name || `Gallery ${index + 1}`
           })),
 
           reels: reelEntries.map((reel: any, index: number) => ({
@@ -164,7 +166,7 @@ export default function PublicTalentProfilePage() {
             title: reel.title || `Demo Reel ${index + 1}`,
             duration: '2:30',
             thumbnail: '/api/placeholder/400/225',
-            url: reel.media_url || '#'
+            url: getMediaUrl(reel) || '#'
           })),
 
           experience: [],

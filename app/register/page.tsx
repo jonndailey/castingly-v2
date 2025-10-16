@@ -109,17 +109,19 @@ export default function RegisterPage() {
             <label className="block text-sm font-medium text-gray-700 mb-3">
               I am a...
             </label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {roleOptions.map((option) => (
                 <button
                   key={option.value}
+                  type="button"
                   onClick={() => setFormData({ ...formData, role: option.value })}
                   className={cn(
-                    'relative p-3 rounded-lg border-2 transition-all',
+                    'relative p-3 rounded-lg border-2 transition-all text-left sm:text-center',
                     formData.role === option.value
                       ? 'border-primary-500 bg-primary-50'
                       : 'border-gray-200 hover:border-gray-300'
                   )}
+                  aria-pressed={formData.role === option.value}
                 >
                   <div className="text-2xl mb-1">{option.icon}</div>
                   <p className="text-sm font-medium">{option.label}</p>

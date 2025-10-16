@@ -26,13 +26,16 @@ interface AuthState {
   authSource: 'dailey-core' | 'legacy' | 'demo' | null
   isLoading: boolean
   error: string | null
+  pendingMfa: PendingMfaChallenge | null
   
   // Development mode - role switching
   devMode: boolean
   originalUser: User | null
   
   // Actions
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<{ mfaRequired: true } | void>
+  completeMfa: (params: { code?: string; backupCode?: string }) => Promise<void>
+  clearPendingMfa: () => void
   register: (data: RegisterData) => Promise<void>
   logout: () => Promise<void>
   updateUser: (user: Partial<User>) => void
@@ -48,6 +51,20 @@ interface RegisterData {
   password: string
   name: string
   role: UserRole
+}
+
+interface PendingMfaChallenge {
+  token: string
+  challengeId?: string
+  expiresAt: number
+  type: string
+  methods: string[]
+  user: {
+    id: string
+    email: string
+    name?: string
+    email_verified?: boolean
+  }
 }
 
 // Demo users for development with password
@@ -103,11 +120,12 @@ const useAuthStore = create<AuthState>()(
       authSource: null,
       isLoading: false,
       error: null,
+      pendingMfa: null,
       devMode: process.env.NODE_ENV === 'development',
       originalUser: null,
 
       login: async (email: string, password: string) => {
-        set({ isLoading: true, error: null })
+        set({ isLoading: true, error: null, pendingMfa: null })
         
         try {
           console.log('🎭 Castingly Login Attempt:', email)
@@ -149,6 +167,28 @@ const useAuthStore = create<AuthState>()(
             })
             throw new Error(data.error || 'Invalid credentials')
           }
+
+          if (data.mfa_required) {
+            const expiresIn = typeof data.challenge_expires_in === 'number' ? data.challenge_expires_in : 300
+            set({
+              pendingMfa: {
+                token: data.challenge_token,
+                challengeId: data.challenge_id,
+                expiresAt: Date.now() + expiresIn * 1000,
+                type: data.mfa_type || 'totp',
+                methods: Array.isArray(data.methods) && data.methods.length > 0 ? data.methods : ['totp'],
+                user: data.user
+              },
+              isLoading: false,
+              error: null,
+              user: null,
+              token: null,
+              refreshToken: null,
+              originalUser: null,
+              authSource: null
+            })
+            return { mfaRequired: true }
+          }
           
           // Successful API login
           console.log('✅ Login successful via:', data.source)
@@ -170,6 +210,64 @@ const useAuthStore = create<AuthState>()(
           throw error
         }
       },
+
+      completeMfa: async ({ code, backupCode }: { code?: string; backupCode?: string }) => {
+        const { pendingMfa } = get()
+
+        if (!pendingMfa) {
+          throw new Error('No pending MFA challenge to complete')
+        }
+
+        if (!code && !backupCode) {
+          set({ error: 'MFA code or backup code is required', isLoading: false })
+          throw new Error('MFA code or backup code is required')
+        }
+
+        set({ isLoading: true, error: null })
+
+        try {
+          const response = await fetch('/api/auth/mfa/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              token: pendingMfa.token,
+              code,
+              backup_code: backupCode
+            })
+          })
+
+          const data = await response.json()
+
+          if (!response.ok) {
+            set({
+              error: data.error || 'Invalid MFA code',
+              isLoading: false
+            })
+            throw new Error(data.error || 'Invalid MFA code')
+          }
+
+          console.log('✅ MFA completed; login finalized via:', data.source)
+
+          set({
+            user: data.user,
+            token: data.token,
+            refreshToken: data.refresh_token || null,
+            authSource: data.source as 'dailey-core' | 'legacy',
+            isLoading: false,
+            pendingMfa: null,
+            error: null,
+            originalUser: data.user
+          })
+        } catch (error: any) {
+          console.error('❌ MFA verification failed:', error)
+          if (!error.message?.includes('Invalid MFA code')) {
+            set({ isLoading: false })
+          }
+          throw error
+        }
+      },
+
+      clearPendingMfa: () => set({ pendingMfa: null }),
 
       register: async (data: RegisterData) => {
         set({ isLoading: true, error: null })
@@ -222,6 +320,7 @@ const useAuthStore = create<AuthState>()(
           token: null,
           refreshToken: null,
           authSource: null,
+          pendingMfa: null,
           originalUser: null,
           error: null 
         })

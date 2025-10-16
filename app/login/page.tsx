@@ -1,23 +1,52 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { User, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import useAuthStore from '@/lib/store/auth-store'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { login, isLoading, error, clearError } = useAuthStore()
+  const { login, completeMfa, pendingMfa, clearPendingMfa, isLoading, error, clearError } = useAuthStore()
   
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
-  
+  const [mfaCode, setMfaCode] = useState('')
+  const [backupCode, setBackupCode] = useState('')
+  const [useBackupCode, setUseBackupCode] = useState(false)
+  const isMfaStep = Boolean(pendingMfa)
+
+  useEffect(() => {
+    if (pendingMfa) {
+      clearError()
+      setValidationErrors({})
+      setMfaCode('')
+      setBackupCode('')
+      setUseBackupCode(false)
+    }
+  }, [pendingMfa, clearError])
+
+  const routeToDashboard = () => {
+    const { user } = useAuthStore.getState()
+    if (user) {
+      let dashboardPath: string
+      if (user.role === 'casting_director') {
+        dashboardPath = '/casting/dashboard'
+      } else if (user.role === 'admin') {
+        dashboardPath = '/admin'
+      } else {
+        dashboardPath = `/${user.role}/dashboard`
+      }
+      router.push(dashboardPath)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     clearError()
@@ -36,26 +65,55 @@ export default function LoginPage() {
     try {
       // For demo, accept any email/password
       // In production, this would call the real API
-      await login(email, password)
-      
-      // Get the user from the store to determine their role
-      const { user } = useAuthStore.getState()
-      if (user) {
-        let dashboardPath: string
-        if (user.role === 'casting_director') {
-          dashboardPath = '/casting/dashboard'
-        } else if (user.role === 'admin') {
-          dashboardPath = '/admin'
-        } else {
-          dashboardPath = `/${user.role}/dashboard`
-        }
-        router.push(dashboardPath)
+      const result = await login(email, password)
+
+      if (result?.mfaRequired) {
+        return
       }
+
+      routeToDashboard()
     } catch (err) {
       // Error is handled by the store
     }
   }
-  
+
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!pendingMfa) return
+
+    clearError()
+    setValidationErrors({})
+
+    if (!useBackupCode && !mfaCode) {
+      setValidationErrors({ mfa: 'Authentication code is required' })
+      return
+    }
+
+    if (useBackupCode && !backupCode) {
+      setValidationErrors({ backup: 'Backup code is required' })
+      return
+    }
+
+    try {
+      await completeMfa({
+        code: useBackupCode ? undefined : mfaCode,
+        backupCode: useBackupCode ? backupCode : undefined
+      })
+      routeToDashboard()
+    } catch (err) {
+      // Error is handled by the store
+    }
+  }
+
+  const handleCancelMfa = () => {
+    clearPendingMfa()
+    setMfaCode('')
+    setBackupCode('')
+    setUseBackupCode(false)
+    setValidationErrors({})
+    clearError()
+  }
+
   // Demo login function
   const demoLogin = async (role: 'actor' | 'agent' | 'casting_director' | 'admin') => {
     const demoAccounts = {
@@ -100,44 +158,125 @@ export default function LoginPage() {
             <p className="text-xs text-gray-500 mt-1">Powered by DAILEY CORE</p>
           </div>
           
-          {/* Form */}
-          <form id="login-form" onSubmit={handleSubmit} className="space-y-6" noValidate>
-            <Input
-              type="text"
-              label="Username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              error={validationErrors.email}
-              icon={<User className="w-4 h-4" />}
-              placeholder="e.g., danactor"
-              autoComplete="username"
-              required={false}
-            />
-            
-            <div className="relative">
-              <Input
-                type={showPassword ? 'text' : 'password'}
-                label="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                error={validationErrors.password}
-                icon={<Lock className="w-4 h-4" />}
-                placeholder="Enter your password"
-                autoComplete="current-password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-[38px] text-gray-400 hover:text-gray-600"
-              >
-                {showPassword ? (
-                  <EyeOff className="w-4 h-4" />
+          {isMfaStep ? (
+            <motion.div
+              key="mfa-step"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <ShieldCheck className="w-8 h-8 text-purple-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Two-Step Verification</h2>
+                <p className="text-gray-600">
+                  Enter the {useBackupCode ? 'backup code' : '6-digit code'} for{' '}
+                  <span className="font-medium text-gray-900">{pendingMfa?.user.email}</span>
+                </p>
+              </div>
+
+              <form id="mfa-form" onSubmit={handleMfaSubmit} className="space-y-6">
+                {useBackupCode ? (
+                  <Input
+                    type="text"
+                    label="Backup Code"
+                    value={backupCode}
+                    onChange={(e) => setBackupCode(e.target.value.toUpperCase())}
+                    error={validationErrors.backup}
+                    placeholder="ABCD-EFGH"
+                    autoComplete="off"
+                  />
                 ) : (
-                  <Eye className="w-4 h-4" />
+                  <Input
+                    type="text"
+                    label="Authentication Code"
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\s+/g, ''))}
+                    error={validationErrors.mfa}
+                    placeholder="123456"
+                    autoComplete="one-time-code"
+                  />
                 )}
-              </button>
-            </div>
-            
+
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+
+                <div className="flex items-center justify-between text-sm">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUseBackupCode((prev) => !prev)
+                      setValidationErrors({})
+                      clearError()
+                    }}
+                    className="text-primary-600 hover:text-primary-700 font-medium"
+                  >
+                    {useBackupCode ? 'Use authenticator code' : 'Use a backup code'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelMfa}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    Switch account
+                  </button>
+                </div>
+
+                <Button
+                  type="submit"
+                  fullWidth
+                  size="lg"
+                  loading={isLoading}
+                  icon={<ArrowRight className="w-4 h-4" />}
+                  iconPosition="right"
+                >
+                  Verify & Continue
+                </Button>
+              </form>
+            </motion.div>
+          ) : (
+            <>
+              <form id="login-form" onSubmit={handleSubmit} className="space-y-6" noValidate>
+                <Input
+                  type="text"
+                  label="Username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  error={validationErrors.email}
+                  icon={<User className="w-4 h-4" />}
+                  placeholder="e.g., danactor"
+                  autoComplete="username"
+                  required={false}
+                />
+
+                <div className="relative">
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    label="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    error={validationErrors.password}
+                    icon={<Lock className="w-4 h-4" />}
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-[38px] text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? (<EyeOff className="w-4 h-4" />) : (<Eye className="w-4 h-4" />)}
+                  </button>
+                </div>
+
             {error && (
               <motion.div
                 initial={{ opacity: 0 }}
@@ -147,16 +286,16 @@ export default function LoginPage() {
                 {error}
               </motion.div>
             )}
-            
-            <div className="flex items-center justify-between">
-              <label className="flex items-center">
+
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <label className="flex items-center text-sm text-gray-600">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mr-2"
                 />
-                <span className="ml-2 text-sm text-gray-600">Remember me</span>
+                <span>Remember me</span>
               </label>
-              
+
               <Link
                 href="/forgot-password"
                 className="text-sm text-primary-600 hover:text-primary-700"
@@ -164,58 +303,36 @@ export default function LoginPage() {
                 Forgot password?
               </Link>
             </div>
-            
-            <Button
-              type="submit"
-              fullWidth
-              size="lg"
-              loading={isLoading}
-              icon={<ArrowRight className="w-4 h-4" />}
-              iconPosition="right"
-            >
-              Sign In
-            </Button>
-          </form>
-          
-          {/* Demo accounts */}
-          <div className="mt-8 pt-8 border-t border-gray-200">
-            <p className="text-center text-sm text-gray-600 mb-4">
-              Try a demo account
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                onClick={() => demoLogin('actor')}
-                variant="outline"
-                size="sm"
-              >
-                Actor
-              </Button>
-              <Button
-                onClick={() => demoLogin('agent')}
-                variant="outline"
-                size="sm"
-              >
-                Agent
-              </Button>
-              <Button
-                onClick={() => demoLogin('casting_director')}
-                variant="outline"
-                size="sm"
-              >
-                Director
-              </Button>
-              <Button
-                onClick={() => demoLogin('admin')}
-                variant="outline"
-                size="sm"
-                className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
-              >
-                🛡️ Admin
-              </Button>
-            </div>
-          </div>
-          
+
+                <Button
+                  type="submit"
+                  fullWidth
+                  size="lg"
+                  loading={isLoading}
+                  icon={<ArrowRight className="w-4 h-4" />}
+                  iconPosition="right"
+                >
+                  Sign In
+                </Button>
+              </form>
+
+              {/* Demo accounts */}
+              <div className="mt-8 pt-8 border-t border-gray-200">
+                <p className="text-center text-sm text-gray-600 mb-4">
+                  Try a demo account
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button onClick={() => demoLogin('actor')} variant="outline" size="sm">Actor</Button>
+                  <Button onClick={() => demoLogin('agent')} variant="outline" size="sm">Agent</Button>
+                  <Button onClick={() => demoLogin('casting_director')} variant="outline" size="sm">Casting Director</Button>
+                  <Button onClick={() => demoLogin('admin')} variant="outline" size="sm" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100">🛡️ Admin</Button>
+                </div>
+              </div>
+            </>
+          )}
+
           {/* Sign up link */}
+
           <p className="mt-8 text-center text-sm text-gray-600">
             Don't have an account?{' '}
             <Link
