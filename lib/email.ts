@@ -53,9 +53,13 @@ type SendSignalEmailOptions = {
   subject: string;
   html: string;
   text?: string;
+  name?: string | null;
   tags?: string[];
   metadata?: Record<string, unknown>;
   priority?: 'low' | 'normal' | 'high';
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  expiresAt: Date;
 };
 
 type PasswordResetEmailOptions = {
@@ -202,6 +206,7 @@ export async function sendPasswordResetEmail(
     subject,
     html: htmlBody,
     text: textBody,
+    name: options.name ?? null,
     tags: ['password-reset'],
     metadata: {
       template: 'password-reset',
@@ -210,5 +215,8 @@ export async function sendPasswordResetEmail(
       userAgent: options.userAgent ?? null,
       app: 'castingly',
     },
+    ipAddress: options.ipAddress ?? null,
+    userAgent: options.userAgent ?? null,
+    expiresAt: options.expiresAt,
   });
 }

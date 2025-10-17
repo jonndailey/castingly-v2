@@ -22,16 +22,16 @@ export async function POST(request: NextRequest) {
     try {
       const coreAuthResult = await daileyCoreAuth.login(email, password);
 
-      if ((coreAuthResult as any).mfa_required) {
+      if ('mfa_required' in coreAuthResult) {
         console.log('🔐 Dailey Core requires MFA for:', email);
         return NextResponse.json({
           mfa_required: true,
-          challenge_token: (coreAuthResult as any).challenge_token,
-          challenge_id: (coreAuthResult as any).challenge_id,
-          challenge_expires_in: (coreAuthResult as any).challenge_expires_in,
-          mfa_type: (coreAuthResult as any).mfa_type,
-          methods: (coreAuthResult as any).methods,
-          user: (coreAuthResult as any).user,
+          challenge_token: coreAuthResult.challenge_token,
+          challenge_id: coreAuthResult.challenge_id,
+          challenge_expires_in: coreAuthResult.challenge_expires_in,
+          mfa_type: coreAuthResult.mfa_type,
+          methods: coreAuthResult.methods,
+          user: coreAuthResult.user,
           source: 'dailey-core'
         });
       }

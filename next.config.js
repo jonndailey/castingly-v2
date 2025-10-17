@@ -1,21 +1,32 @@
+const dmapiBaseUrl =
+  process.env.NEXT_PUBLIC_DMAPI_BASE_URL || process.env.DMAPI_BASE_URL
+
+let dmapiDomain = null
+if (dmapiBaseUrl) {
+  try {
+    dmapiDomain = new URL(dmapiBaseUrl).hostname
+  } catch {
+    dmapiDomain = null
+  }
+}
+
+const imageDomains = new Set([
+  'localhost',
+  '100.105.97.19',
+  'cloudinary.com',
+  'youtube.com',
+  'vimeo.com',
+])
+
+if (dmapiDomain) {
+  imageDomains.add(dmapiDomain)
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['localhost', '100.105.97.19', 'cloudinary.com', 'youtube.com', 'vimeo.com'],
-  },
-  // Serve static files from downloaded folders
-  async rewrites() {
-    return [
-      {
-        source: '/downloaded_images/:path*',
-        destination: '/api/media/images/:path*',
-      },
-      {
-        source: '/downloaded_resumes/:path*',
-        destination: '/api/media/resumes/:path*',
-      },
-    ]
+    domains: Array.from(imageDomains),
   },
   // Enable PWA features
   headers: async () => [

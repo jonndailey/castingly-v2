@@ -69,8 +69,9 @@ export default class SignalClient {
       }
 
       if (!response.ok) {
+        const errorData = (data ?? {}) as { message?: string; error?: string }
         throw new SignalError(
-          data?.message || data?.error || `Signal API request failed (${response.status})`,
+          errorData.message || errorData.error || `Signal API request failed (${response.status})`,
           response.status,
           data
         )

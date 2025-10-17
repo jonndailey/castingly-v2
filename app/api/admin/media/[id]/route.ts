@@ -1,54 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
-import mysql from 'mysql2/promise'
-
-const dbConfig = {
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT || '3306'),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-}
+import { deleteFile as deleteDmapiFile } from '@/lib/server/dmapi-service'
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await context.params
+
   try {
-    const { id } = await context.params
-    const fileId = parseInt(id, 10)
-    const { searchParams } = new URL(request.url)
-    const type = searchParams.get('type') || 'actor_media' // Default to actor_media
-
-    const connection = await mysql.createConnection(dbConfig)
-
-    let result: any
-    if (type === 'submission_media') {
-      [result] = await connection.execute(
-        'DELETE FROM submission_media WHERE id = ?',
-        [fileId]
-      )
-    } else {
-      [result] = await connection.execute(
-        'DELETE FROM actor_media WHERE id = ?',
-        [fileId]
-      )
-    }
-
-    await connection.end()
-
-    if (result.affectedRows === 0) {
+    if (!id) {
       return NextResponse.json(
-        { error: 'Media file not found' },
-        { status: 404 }
+        { error: 'File ID is required' },
+        { status: 400 }
       )
     }
 
-    return NextResponse.json({ 
+    await deleteDmapiFile(id)
+
+    return NextResponse.json({
       success: true,
-      message: 'Media file deleted successfully'
+      message: 'Media file deleted successfully',
     })
   } catch (error) {
-    console.error('Failed to delete media file:', error)
+    console.error(`Failed to delete DMAPI media file ${id}:`, error)
     return NextResponse.json(
       { error: 'Failed to delete media file' },
       { status: 500 }

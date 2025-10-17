@@ -235,7 +235,7 @@ export default function ActorMedia() {
     <AppLayout>
       <PageHeader
         title="Media Library"
-        description="Manage headshots, reels, self-tapes, resumes, and other professional assets."
+        subtitle="Manage headshots, reels, self-tapes, resumes, and other professional assets."
         actions={
           <div className="flex items-center gap-3">
             <select
@@ -438,7 +438,7 @@ export default function ActorMedia() {
                       <Download className="h-3 w-3" />
                     </Button>
                     <Button
-                      variant="destructive"
+                      variant="danger"
                       size="sm"
                       onClick={() => handleDelete(item.id)}
                     >

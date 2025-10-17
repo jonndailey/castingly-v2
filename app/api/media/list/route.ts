@@ -28,9 +28,14 @@ export async function GET(request: NextRequest) {
     const filtered =
       categoryFilter && categoryFilter !== 'all'
         ? files.filter((file) => {
-            const fileCategory =
-              (file.metadata?.category as string | undefined) ??
-              (file.metadata?.tags?.[0] as string | undefined)
+            const metadata = (file.metadata || {}) as Record<string, unknown>
+            const categoryValue = metadata['category'] as string | undefined
+            const tags = metadata['tags']
+            const firstTag =
+              Array.isArray(tags) && tags.length > 0
+                ? (tags[0] as string | undefined)
+                : undefined
+            const fileCategory = categoryValue ?? firstTag
             return fileCategory?.toLowerCase() === categoryFilter
           })
         : files

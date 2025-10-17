@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import mysql from 'mysql2/promise'
+import {
+  deleteFile as deleteDmapiFile,
+  listActorFiles as listActorDmapiFiles,
+} from '@/lib/server/dmapi-service'
 
 const dbConfig = {
   host: process.env.DB_HOST,
@@ -48,22 +52,40 @@ export async function POST(request: NextRequest) {
 
       case 'delete': {
         // First, delete related records to avoid foreign key constraints
-        
-        // Delete actor media
-        await connection.execute(
-          `DELETE am FROM actor_media am 
-           JOIN actors a ON am.actor_id = a.user_id 
-           WHERE a.user_id IN (${placeholders})`,
-          userIds
-        )
 
-        // Delete submission media
+        // Delete submission media (legacy storage)
         await connection.execute(
           `DELETE sm FROM submission_media sm 
            JOIN submissions s ON sm.submission_id = s.id 
            WHERE s.actor_id IN (${placeholders})`,
           userIds
         )
+
+        // Delete DMAPI media for each actor
+        for (const rawUserId of userIds) {
+          try {
+            const dmapiResponse = await listActorDmapiFiles(rawUserId, {
+              limit: 500,
+            })
+            const files = dmapiResponse.files ?? []
+
+            for (const file of files) {
+              try {
+                await deleteDmapiFile(file.id)
+              } catch (dmapiError) {
+                console.error(
+                  `Failed to delete DMAPI media ${file.id} for user ${rawUserId}:`,
+                  dmapiError
+                )
+              }
+            }
+          } catch (error) {
+            console.error(
+              `Failed to list DMAPI media for user ${rawUserId}:`,
+              error
+            )
+          }
+        }
 
         // Delete submissions
         await connection.execute(

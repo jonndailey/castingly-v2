@@ -1,54 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server'
-import mysql from 'mysql2/promise'
-
-const dbConfig = {
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT || '3306'),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-}
+import { deleteFile as deleteDmapiFile } from '@/lib/server/dmapi-service'
 
 export async function POST(request: NextRequest) {
   try {
     const { fileIds } = await request.json()
 
-    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+    if (!Array.isArray(fileIds) || fileIds.length === 0) {
       return NextResponse.json(
         { error: 'No file IDs provided' },
         { status: 400 }
       )
     }
 
-    const connection = await mysql.createConnection(dbConfig)
+    let deletedCount = 0
+    const failures: Array<{ id: string; error: string }> = []
 
-    // Since we don't know which table each ID belongs to, we'll try both
-    // In a real implementation, you'd include the type information
-    const placeholders = fileIds.map(() => '?').join(',')
-    
-    // Delete from actor_media
-    const [actorResult] = await connection.execute(
-      `DELETE FROM actor_media WHERE id IN (${placeholders})`,
-      fileIds
-    ) as any
+    for (const rawId of fileIds) {
+      const id = String(rawId)
+      if (!id) continue
 
-    // Delete from submission_media
-    const [submissionResult] = await connection.execute(
-      `DELETE FROM submission_media WHERE id IN (${placeholders})`,
-      fileIds
-    ) as any
+      try {
+        await deleteDmapiFile(id)
+        deletedCount += 1
+      } catch (error) {
+        console.error(`Failed to delete DMAPI file ${id}:`, error)
+        failures.push({
+          id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    }
 
-    await connection.end()
-
-    const totalDeleted = actorResult.affectedRows + submissionResult.affectedRows
-
-    return NextResponse.json({ 
-      success: true,
-      message: `${totalDeleted} media files deleted successfully`,
-      deletedCount: totalDeleted
+    return NextResponse.json({
+      success: failures.length === 0,
+      deletedCount,
+      failedCount: failures.length,
+      failures,
     })
   } catch (error) {
-    console.error('Failed to bulk delete media files:', error)
+    console.error('Failed to bulk delete DMAPI media files:', error)
     return NextResponse.json(
       { error: 'Failed to bulk delete media files' },
       { status: 500 }

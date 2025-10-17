@@ -321,7 +321,13 @@ export default function ActorProfile() {
                 {/* Profile Photo */}
                 <div className="flex flex-col items-center">
                   <Avatar
-                    src={primaryHeadshot ? getMediaUrl(primaryHeadshot) : user?.avatar_url}
+                    src={
+                      (
+                        primaryHeadshot
+                          ? getMediaUrl(primaryHeadshot)
+                          : user?.avatar_url
+                      ) ?? undefined
+                    }
                     alt={actorData?.name || ''}
                     fallback={actorData?.name || ''}
                     size="xl"

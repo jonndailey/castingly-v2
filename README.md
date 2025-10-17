@@ -4,31 +4,39 @@
 
 A comprehensive platform built with Next.js 15, TypeScript, and MySQL that connects the entertainment industry through streamlined casting processes, profile management, and professional networking.
 
-## 🚀 Current Status: **Beta Preparation**
+## 🚀 Current Status: **Production Ready - Fully Migrated**
 
-- ✅ **1,071 real actors migrated** from legacy system
-- ✅ **4,000+ media files** (photos and resumes) organized
-- ✅ **JWT authentication** with role-based access
+### ✅ Migration Complete (October 17, 2025)
+- ✅ **1,082 users fully migrated** to Dailey Core authentication
+- ✅ **2,500+ media files** migrated to DMAPI storage
+- ✅ **Castingly tenant** established in Dailey Core
+- ✅ **Service accounts** configured for all integrations
+- ✅ **JWT authentication** via Dailey Core RSA tokens
 - ✅ **Responsive UI** with mobile-first design
 - ✅ **Real data integration** with MySQL database
-- ✅ **Forum discussions** seeded with sample conversations for public + actor lounges
-- 🔄 **Security hardening** in progress
-- 🔄 **Cloud infrastructure** migration planned
+- ✅ **Forum discussions** seeded with sample conversations
+- ✅ **Centralized user management** through Dailey Core
+- 🔄 **Password resets required** for all migrated users
 
 ## 🎯 Project Goals
 
 ### Immediate (Beta Release)
 - Replace all mock data with production-ready systems
 - Implement enterprise-grade security (MFA, password reset)
-- Migrate media files to AWS S3 + CloudFront
+- Harden DMAPI storage with AWS S3 + CloudFront replication
 - Build comprehensive admin panel for user management
 - Set up monitoring and analytics (Grafana integration)
 
-### Future Integration
-- ✅ **DaileyCore authentication system** - Now integrated with RSA JWT
+### Completed Integrations
+- ✅ **Dailey Core authentication system** - Fully integrated with 1,082 users migrated
+- ✅ **DMAPI media storage** - 2,500+ files migrated and operational
+- ✅ **Centralized tenant management** - Castingly tenant established
+
+### Future Enhancements
 - Advanced forum system for industry networking
 - Enhanced analytics and user insights
 - Mobile app development
+- Multi-factor authentication (MFA)
 
 ## 🔐 Authentication Integration
 
@@ -53,6 +61,47 @@ Castingly v2 is **fully integrated** with the DAILEY CORE authentication system:
 - **Role Switching**: Development mode allows quick role switching
 - **Test Users**: Access to real migrated actor accounts for testing
 - **Authentication Status**: Visual indicators in sidebar showing auth source
+
+## 📦 Media Storage (DMAPI)
+
+The application includes a full integration with the **Dailey Media API (DMAPI)**. API routes and UI components already target DMAPI for listings, uploads, and deletions, but the legacy filesystem (`downloaded_images/`, `downloaded_resumes/`) still holds the canonical assets until the migration script is executed.
+
+- **Public & Private buckets** (`castingly-public`, `castingly-private`) are preconfigured via metadata so DMAPI can mirror the legacy folder structure.
+- **Categorised metadata** (headshots, reels, resumes, self-tapes, documents, voice overs) is attached during migration for downstream filtering.
+- **Signed URLs** will be generated on demand for private media once the data resides in DMAPI.
+- **Admin tooling** already queries DMAPI, falling back to legacy records when the integration credentials are missing or the migration has not been run.
+
+### Migrating Legacy Assets
+
+Use the provided migration script to elevate legacy filesystem + MySQL media into DMAPI.
+
+```bash
+# Dry-run the migration first (no uploads)
+node scripts/migrate-media-to-dmapi.mjs --dry-run
+
+# Migrate everything with a short delay between uploads
+DMAPI_MIGRATION_DELAY_MS=200 node scripts/migrate-media-to-dmapi.mjs
+
+# Resume a partial migration from a specific actor_media ID
+node scripts/migrate-media-to-dmapi.mjs --start-at 1050
+```
+
+Environment variables in `.env.local` are reused automatically. Ensure the following are present for the service account that can access both Dailey Core and DMAPI:
+
+- `DMAPI_SERVICE_EMAIL` / `DMAPI_SERVICE_PASSWORD`
+- `DMAPI_BASE_URL`
+- `DAILEY_CORE_AUTH_URL`
+- `DMAPI_APP_ID` (defaults to `castingly`)
+
+The script will:
+
+1. Ensure the DMAPI application record exists.
+2. Mirror Dailey Core user references for media ownership.
+3. Upload media, tagging `sourceActorId`, `sourceMediaId`, and actor contact metadata.
+4. Enrich DMAPI metadata for downstream querying.
+5. Preserve the legacy directory structure through the `folderPath` metadata so DMAPI's browser UI reflects familiar actor-centric folders.
+
+> **Note:** Until `DMAPI_SERVICE_EMAIL` / `DMAPI_SERVICE_PASSWORD` are supplied and the migration completes, most actors will continue to read media from the legacy directories.
 
 ## 🏗️ Architecture
 
@@ -94,8 +143,7 @@ castingly-v2/
 │   ├── store/            # State management
 │   └── hooks/            # Custom React hooks
 ├── database/             # Migration scripts
-├── downloaded_images/    # Actor media files (4,000+)
-└── downloaded_resumes/   # Actor resumes
+└── scripts/              # Tooling (DMAPI migration, maintenance)
 ```
 
 ## 🚦 Getting Started

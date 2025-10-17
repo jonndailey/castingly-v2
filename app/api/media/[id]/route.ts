@@ -3,7 +3,7 @@ import { deleteFile, validateUserToken } from '@/lib/dmapi'
 
 export async function DELETE(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await validateUserToken(
@@ -17,7 +17,7 @@ export async function DELETE(
       )
     }
 
-    const { id } = context.params
+    const { id } = await context.params
     if (!id) {
       return NextResponse.json(
         { error: 'File ID required' },

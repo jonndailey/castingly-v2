@@ -2,40 +2,40 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { 
-  FileImage, 
-  Video, 
+import {
+  FileImage,
+  Video,
   File,
+  Music,
   Search,
-  Filter,
   Download,
   Trash2,
   Eye,
   User,
   Calendar,
-  Tag,
   HardDrive,
-  MoreVertical,
   RefreshCw,
-  AlertTriangle
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 interface MediaFile {
-  id: number
-  type: 'actor_media' | 'submission_media'
+  id: string
   media_type: string
-  media_url: string
+  media_url: string | null
+  signed_url: string | null
+  thumbnail_url: string | null
   caption?: string
   is_primary?: boolean
   owner_name: string
-  owner_email: string
-  owner_id: number
+  owner_email: string | null
+  owner_id: string | null
   created_at: string
-  file_size?: string
-  file_type?: string
+  file_size: string
+  file_type: string
+  visibility: 'public' | 'private'
+  metadata: Record<string, unknown>
 }
 
 interface MediaStats {
@@ -47,6 +47,7 @@ interface MediaStats {
   videos: number
   reels: number
   resumes: number
+  voiceOver?: number
   recentUploads: number
 }
 
@@ -55,11 +56,10 @@ export default function MediaManagementPage() {
   const [stats, setStats] = useState<MediaStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [typeFilter, setTypeFilter] = useState<string>('all')
   const [mediaTypeFilter, setMediaTypeFilter] = useState<string>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [selectedFiles, setSelectedFiles] = useState<number[]>([])
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
 
   const fetchMediaFiles = useCallback(async () => {
     setIsLoading(true)
@@ -68,7 +68,6 @@ export default function MediaManagementPage() {
         page: currentPage.toString(),
         limit: '20',
         search: searchTerm,
-        type: typeFilter === 'all' ? '' : typeFilter,
         media_type: mediaTypeFilter === 'all' ? '' : mediaTypeFilter,
       })
 
@@ -83,7 +82,7 @@ export default function MediaManagementPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentPage, mediaTypeFilter, searchTerm, typeFilter])
+  }, [currentPage, mediaTypeFilter, searchTerm])
 
   const fetchStats = useCallback(async () => {
     try {
@@ -102,7 +101,7 @@ export default function MediaManagementPage() {
     fetchStats()
   }, [fetchMediaFiles, fetchStats])
 
-  const deleteMediaFile = async (fileId: number) => {
+  const deleteMediaFile = async (fileId: string) => {
     try {
       const response = await fetch(`/api/admin/media/${fileId}`, {
         method: 'DELETE',
@@ -142,11 +141,11 @@ export default function MediaManagementPage() {
   const getMediaTypeIcon = (mediaType: string) => {
     switch (mediaType) {
       case 'headshot':
-      case 'gallery':
         return <FileImage className="w-5 h-5 text-purple-500" />
       case 'reel':
-      case 'audition_video':
         return <Video className="w-5 h-5 text-blue-500" />
+      case 'voice_over':
+        return <Music className="w-5 h-5 text-blue-500" />
       case 'resume':
         return <File className="w-5 h-5 text-green-500" />
       default:
@@ -158,13 +157,14 @@ export default function MediaManagementPage() {
     switch (mediaType) {
       case 'headshot':
         return 'bg-purple-100 text-purple-800'
-      case 'gallery':
-        return 'bg-pink-100 text-pink-800'
       case 'reel':
-      case 'audition_video':
         return 'bg-blue-100 text-blue-800'
+      case 'voice_over':
+        return 'bg-indigo-100 text-indigo-800'
       case 'resume':
         return 'bg-green-100 text-green-800'
+      case 'document':
+        return 'bg-yellow-100 text-yellow-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -180,15 +180,19 @@ export default function MediaManagementPage() {
     })
   }
 
-  const isImage = (url: string) => {
+  const isImage = (url: string | null) => {
+    if (!url) return false
     return /\.(jpg|jpeg|png|gif|webp)$/i.test(url)
   }
 
-  const isVideo = (url: string) => {
+  const isVideo = (url: string | null) => {
+    if (!url) return false
     return /\.(mp4|webm|ogg|mov)$/i.test(url)
   }
 
-  const toggleFileSelection = (fileId: number) => {
+  const getFileUrl = (file: MediaFile) => file.media_url || file.signed_url || ''
+
+  const toggleFileSelection = (fileId: string) => {
     setSelectedFiles(prev => 
       prev.includes(fileId) 
         ? prev.filter(id => id !== fileId)
@@ -238,9 +242,9 @@ export default function MediaManagementPage() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600">Submission Videos</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.submissionMedia.toLocaleString()}</p>
-                    <p className="text-xs text-gray-500">Audition videos</p>
+                    <p className="text-sm font-medium text-gray-600">Video Assets</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.reels.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">Reels & demo videos</p>
                   </div>
                   <Video className="w-8 h-8 text-blue-500" />
                 </div>
@@ -280,16 +284,6 @@ export default function MediaManagementPage() {
               
               <div className="flex gap-4">
                 <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-                >
-                  <option value="all">All Sources</option>
-                  <option value="actor_media">Actor Media</option>
-                  <option value="submission_media">Submission Media</option>
-                </select>
-
-                <select
                   value={mediaTypeFilter}
                   onChange={(e) => setMediaTypeFilter(e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
@@ -297,9 +291,11 @@ export default function MediaManagementPage() {
                   <option value="all">All Types</option>
                   <option value="headshot">Headshots</option>
                   <option value="reel">Reels</option>
-                  <option value="gallery">Gallery</option>
+                  <option value="self_tape">Self-Tapes</option>
+                  <option value="voice_over">Voice Overs</option>
                   <option value="resume">Resumes</option>
-                  <option value="audition_video">Audition Videos</option>
+                  <option value="document">Documents</option>
+                  <option value="other">Other</option>
                 </select>
 
                 {selectedFiles.length > 0 && (
@@ -341,7 +337,11 @@ export default function MediaManagementPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {mediaFiles.map((file) => (
+                {mediaFiles.map((file) => {
+                  const previewUrl = file.thumbnail_url || file.media_url || file.signed_url
+                  const viewUrl = getFileUrl(file)
+
+                  return (
                   <motion.div
                     key={file.id}
                     initial={{ opacity: 0, scale: 0.9 }}
@@ -362,18 +362,16 @@ export default function MediaManagementPage() {
                           Primary
                         </div>
                       )}
-
-                      {isImage(file.media_url) ? (
+                      {isImage(previewUrl) ? (
                         <img
-                          src={file.media_url}
+                          src={previewUrl || ''}
                           alt={file.caption || 'Media file'}
                           className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none'
-                            e.currentTarget.parentElement!.innerHTML = '<div class="flex items-center justify-center h-full"><FileImage class="w-12 h-12 text-gray-400" /></div>'
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none'
                           }}
                         />
-                      ) : isVideo(file.media_url) ? (
+                      ) : isVideo(viewUrl) ? (
                         <div className="flex items-center justify-center h-full bg-gray-200">
                           <Video className="w-12 h-12 text-gray-400" />
                         </div>
@@ -399,9 +397,22 @@ export default function MediaManagementPage() {
                           <span className="truncate">{file.owner_name}</span>
                         </div>
 
+                        {file.owner_email && (
+                          <p className="text-xs text-gray-500 truncate" title={file.owner_email || undefined}>
+                            {file.owner_email}
+                          </p>
+                        )}
+
                         <div className="flex items-center text-sm text-gray-600">
                           <Calendar className="w-3 h-3 mr-1" />
                           <span>{formatDate(file.created_at)}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>{file.file_size || '—'}</span>
+                          <span className={file.visibility === 'public' ? 'text-green-600 font-medium' : 'text-yellow-600 font-medium'}>
+                            {file.visibility === 'public' ? 'Public' : 'Private'}
+                          </span>
                         </div>
 
                         {file.caption && (
@@ -414,23 +425,29 @@ export default function MediaManagementPage() {
                       {/* Actions */}
                       <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
                         <div className="flex gap-2">
-                          <a
-                            href={file.media_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1 text-gray-500 hover:text-blue-600"
-                            title="View"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </a>
-                          <a
-                            href={file.media_url}
-                            download
-                            className="p-1 text-gray-500 hover:text-green-600"
-                            title="Download"
-                          >
-                            <Download className="w-4 h-4" />
-                          </a>
+                          {viewUrl ? (
+                            <>
+                              <a
+                                href={viewUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1 text-gray-500 hover:text-blue-600"
+                                title="View"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </a>
+                              <a
+                                href={viewUrl}
+                                download
+                                className="p-1 text-gray-500 hover:text-green-600"
+                                title="Download"
+                              >
+                                <Download className="w-4 h-4" />
+                              </a>
+                            </>
+                          ) : (
+                            <span className="text-xs text-gray-400">Restricted</span>
+                          )}
                         </div>
                         <button
                           onClick={() => deleteMediaFile(file.id)}
@@ -442,7 +459,7 @@ export default function MediaManagementPage() {
                       </div>
                     </div>
                   </motion.div>
-                ))}
+                )})}
               </div>
             )}
 

@@ -1,76 +1,115 @@
 import { NextResponse } from 'next/server'
-import mysql from 'mysql2/promise'
+import { listFiles as listDmapiFiles } from '@/lib/server/dmapi-service'
+import type { DmapiFile } from '@/lib/dmapi'
 
-const dbConfig = {
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT || '3306'),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-}
+const RECENT_WINDOW_DAYS = 7
+const BYTES_IN_MB = 1024 * 1024
 
 export async function GET() {
   try {
-    const connection = await mysql.createConnection(dbConfig)
+    const response = await listDmapiFiles({
+      limit: 500,
+      sort: 'uploaded_at',
+      order: 'desc',
+    })
 
-    // Get actor media stats
-    const [actorMediaResult] = await connection.execute(
-      'SELECT COUNT(*) as total FROM actor_media'
-    ) as any
+    const files = (response.files ?? []) as DmapiFile[]
+    const total = response.pagination?.total ?? files.length
+    const totalSizeBytes = files.reduce(
+      (acc, file) => acc + (file.file_size || 0),
+      0
+    )
 
-    // Get submission media stats  
-    const [submissionMediaResult] = await connection.execute(
-      'SELECT COUNT(*) as total FROM submission_media'
-    ) as any
+    const headshots = countByCategory(files, 'headshot')
+    const reels = countByCategory(files, 'reel')
+    const resumes = countByCategory(files, 'resume')
+    const voiceOver = countByCategory(files, 'voice_over')
 
-    // Get media type breakdown
-    const [headshotsResult] = await connection.execute(
-      "SELECT COUNT(*) as total FROM actor_media WHERE media_type = 'headshot'"
-    ) as any
-
-    const [videosResult] = await connection.execute(
-      "SELECT COUNT(*) as total FROM (SELECT id FROM actor_media WHERE media_type = 'reel' UNION ALL SELECT id FROM submission_media WHERE media_type = 'audition_video') as videos"
-    ) as any
-
-    const [reelsResult] = await connection.execute(
-      "SELECT COUNT(*) as total FROM actor_media WHERE media_type = 'reel'"
-    ) as any
-
-    const [resumesResult] = await connection.execute(
-      "SELECT COUNT(*) as total FROM actor_media WHERE media_type = 'resume'"
-    ) as any
-
-    // Get recent uploads (last 7 days)
-    const [recentUploadsResult] = await connection.execute(
-      `SELECT COUNT(*) as total FROM (
-        SELECT created_at FROM actor_media WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-        UNION ALL 
-        SELECT created_at FROM submission_media WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-      ) as recent`
-    ) as any
-
-    await connection.end()
-
-    const totalFiles = actorMediaResult[0].total + submissionMediaResult[0].total
+    const recentUploads = files.filter((file) => {
+      const uploadedAt = new Date(file.uploaded_at)
+      if (Number.isNaN(uploadedAt.getTime())) return false
+      const diff =
+        Date.now() - uploadedAt.getTime()
+      const days = diff / (1000 * 60 * 60 * 24)
+      return days <= RECENT_WINDOW_DAYS
+    }).length
 
     const stats = {
-      totalFiles,
-      totalSize: `${(totalFiles * 2.5).toFixed(1)} MB`, // Estimated average file size
-      actorMedia: actorMediaResult[0].total,
-      submissionMedia: submissionMediaResult[0].total,
-      headshots: headshotsResult[0].total,
-      videos: videosResult[0].total,
-      reels: reelsResult[0].total,
-      resumes: resumesResult[0].total,
-      recentUploads: recentUploadsResult[0].total,
+      totalFiles: total,
+      totalSize: formatMegabytes(totalSizeBytes),
+      actorMedia: total,
+      submissionMedia: 0,
+      headshots,
+      videos: reels,
+      reels,
+      resumes,
+      voiceOver,
+      recentUploads,
     }
 
     return NextResponse.json(stats)
   } catch (error) {
-    console.error('Failed to fetch media stats:', error)
+    console.error('Failed to fetch DMAPI media stats:', error)
     return NextResponse.json(
       { error: 'Failed to fetch media stats' },
       { status: 500 }
     )
   }
+}
+
+function countByCategory(files: DmapiFile[], category: string) {
+  return files.filter((file) => {
+    const metadata = (file.metadata || {}) as Record<string, unknown>
+    const metaCategory = normalizeCategory(
+      (metadata.category as string) ||
+        (Array.isArray(metadata.tags) ? (metadata.tags[0] as string) : '') ||
+        inferCategoryFromMime(file.mime_type)
+    )
+    return metaCategory === category
+  }).length
+}
+
+function normalizeCategory(value?: string | null): string {
+  if (!value) return 'other'
+  const normalized = value.toLowerCase()
+  switch (normalized) {
+    case 'headshot':
+    case 'reel':
+    case 'resume':
+    case 'self_tape':
+    case 'voice_over':
+    case 'document':
+    case 'other':
+      return normalized
+    case 'self-tape':
+      return 'self_tape'
+    case 'voiceover':
+      return 'voice_over'
+    case 'pdf':
+      return 'resume'
+    default:
+      return normalized
+  }
+}
+
+function inferCategoryFromMime(mime: string): string {
+  if (!mime) return 'other'
+  if (mime.startsWith('image/')) return 'headshot'
+  if (mime.startsWith('video/')) return 'reel'
+  if (mime.startsWith('audio/')) return 'voice_over'
+  if (
+    mime === 'application/pdf' ||
+    mime === 'application/msword' ||
+    mime ===
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ) {
+    return 'resume'
+  }
+  return 'other'
+}
+
+function formatMegabytes(bytes: number) {
+  if (!bytes || Number.isNaN(bytes)) return '0 MB'
+  const megabytes = bytes / BYTES_IN_MB
+  return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB`
 }
