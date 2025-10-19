@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import useAuthStore from '@/lib/store/auth-store'
+import { useEffect, useState } from 'react'
 
 interface NavItem {
   label: string
@@ -163,6 +164,7 @@ const adminNavItems: NavItem[] = [
 export const BottomNav: React.FC = () => {
   const pathname = usePathname()
   const { user } = useAuthStore()
+  const [avatarSrc, setAvatarSrc] = useState<string | null>(null)
   
   // Get navigation items based on user role
   const getNavItems = () => {
@@ -185,6 +187,31 @@ export const BottomNav: React.FC = () => {
   }
   
   const navItems = getNavItems()
+
+  // Resolve a richer avatar for actors (prefer DMAPI headshot or legacy profile_image)
+  useEffect(() => {
+    let cancelled = false
+    async function loadAvatar() {
+      if (!user) return
+      // Default to store avatar
+      let src: string | null = user.avatar_url || null
+      if (user.role === 'actor') {
+        try {
+          const res = await fetch(`/api/actors/${encodeURIComponent(user.id)}`)
+          if (res.ok) {
+            const data = await res.json()
+            const hs = Array.isArray(data?.media?.headshots) ? data.media.headshots : []
+            const first = hs[0]
+            const dmapiUrl = first?.public_url || first?.url || first?.signed_url || first?.thumbnail_url || null
+            src = dmapiUrl || data?.profile_image || src
+          }
+        } catch {}
+      }
+      if (!cancelled) setAvatarSrc(src)
+    }
+    loadAvatar()
+    return () => { cancelled = true }
+  }, [user?.id, user?.role, user?.avatar_url])
   
   // Don't show on non-authenticated pages or admin pages (admin has its own nav)
   if (!user || pathname === '/login' || pathname === '/register' || pathname === '/' || pathname.startsWith('/admin')) {
@@ -235,6 +262,7 @@ export const BottomNav: React.FC = () => {
 export const SideNav: React.FC = () => {
   const pathname = usePathname()
   const { user, devMode, switchRole, logout, authSource } = useAuthStore()
+  const [avatarSrc, setAvatarSrc] = useState<string | null>(null)
   
   const getNavItems = () => {
     if (!user) return []
@@ -256,21 +284,52 @@ export const SideNav: React.FC = () => {
   }
   
   const navItems = getNavItems()
-  
+
   // Don't show sidebar on non-authenticated pages or admin pages (admin has its own nav)
   if (!user || pathname === '/login' || pathname === '/register' || pathname === '/' || pathname.startsWith('/admin')) {
     return null
   }
+
+  // Resolve richer avatar for sidebar as well
+  useEffect(() => {
+    let cancelled = false
+    async function loadAvatar() {
+      if (!user) return
+      let src: string | null = user.avatar_url || null
+      if (user.role === 'actor') {
+        try {
+          const res = await fetch(`/api/actors/${encodeURIComponent(user.id)}`)
+          if (res.ok) {
+            const data = await res.json()
+            const hs = Array.isArray(data?.media?.headshots) ? data.media.headshots : []
+            const first = hs[0]
+            const dmapiUrl = first?.public_url || first?.url || first?.signed_url || first?.thumbnail_url || null
+            src = dmapiUrl || data?.profile_image || src
+          }
+        } catch {}
+      }
+      if (!cancelled) setAvatarSrc(src)
+    }
+    loadAvatar()
+    return () => { cancelled = true }
+  }, [user?.id, user?.role, user?.avatar_url])
   
   return (
     <aside className="hidden md:flex md:flex-shrink-0">
       <div className="flex flex-col w-64 min-h-full">
         <div className="flex flex-col flex-grow bg-white border-r border-gray-200 pt-5 pb-4 overflow-y-auto min-h-full">
-          <div className="flex items-center flex-shrink-0 px-4">
-            <img src="/dailey-core-logo.png" alt="DAILEY CORE" className="w-6 h-6 mr-3" />
-            <h1 className="text-2xl font-heading font-bold gradient-text">
-              Castingly
-            </h1>
+        <div className="flex items-center flex-shrink-0 px-4">
+            {/* Show user avatar in header to avoid confusing Core branding */}
+            {user ? (
+              <img
+                src={avatarSrc || user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`}
+                alt={user.name}
+                className="w-8 h-8 rounded-full mr-3 object-cover"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full mr-3 bg-gradient-to-br from-purple-200 to-teal-200" />
+            )}
+            <h1 className="text-2xl font-heading font-bold gradient-text">Castingly</h1>
           </div>
           
           {/* Authentication status badge */}
@@ -284,16 +343,14 @@ export const SideNav: React.FC = () => {
                   ? "bg-blue-50 text-blue-700 border border-blue-200"
                   : "bg-amber-50 text-amber-700 border border-amber-200"
               )}>
-                {authSource === 'dailey-core' ? (
-                  <img src="/dailey-core-logo.png" alt="DAILEY CORE" className="w-4 h-4" />
-                ) : (
-                  <div className={cn(
+                <div
+                  className={cn(
                     "w-2 h-2 rounded-full animate-pulse",
-                    authSource === 'legacy' ? "bg-blue-500" : "bg-amber-500"
-                  )} />
-                )}
+                    authSource === 'dailey-core' ? "bg-emerald-500" : authSource === 'legacy' ? "bg-blue-500" : "bg-amber-500"
+                  )}
+                />
                 <span className="text-xs">
-                  {authSource === 'dailey-core' && 'DAILEY CORE Auth'}
+                  {authSource === 'dailey-core' && 'Authenticated through DAILEY CORE'}
                   {authSource === 'legacy' && 'Legacy Auth'}
                   {authSource === 'demo' && 'Demo Mode'}
                 </span>
@@ -321,7 +378,7 @@ export const SideNav: React.FC = () => {
           {/* Test user quick switcher */}
           {devMode && user.role === 'actor' && (
             <div className="mt-3 px-4">
-              <label className="text-xs text-gray-500 font-medium">Quick Test Users (4+ images)</label>
+              <label className="text-xs text-gray-500 font-medium">Quick Test Users (Real Accounts)</label>
               <select
                 defaultValue=""
                 onChange={async (e) => {
@@ -343,18 +400,14 @@ export const SideNav: React.FC = () => {
                 className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700 text-sm"
               >
                 <option value="">Select test user...</option>
-                <option value="tjeantaylor@yahoo.com|changeme123">📸 Tina Taylor (15 photos)</option>
-                <option value="dondogar@yahoo.com|changeme123">📸 Dondo Hemen (14 photos)</option>
-                <option value="talentrubystarss@gmail.com|changeme123">📸 Judith Ingram (13 photos)</option>
-                <option value="vladalexandrovamericandream@gmail.com|changeme123">📸 Vlad Alexandrov (12 photos)</option>
-                <option value="jldrisk@protonmail.com|changeme123">📸 Kellynn Skell (12 photos)</option>
-                <option value="fspringer3@gmail.com|changeme123">📸 Frederick Springer (11 photos)</option>
-                <option value="prettypj2024@gmail.com|changeme123">📸 Jasmin Jhamb (11 photos)</option>
-                <option value="haamiimali@gmail.com|changeme123">📸 HaaMiim Ali (11 photos)</option>
-                <option value="ravikr@yopmail.com|changeme123">📸 Ravi Impinge (10 photos)</option>
-                <option value="therealpopeye145@gmail.com|changeme123">📸 Roger Smith (10 photos)</option>
-                <option value="ellewootsionn@gmail.com|changeme123">📸 Elle E (4 photos)</option>
-                <option value="magjofogu@gmail.com|changeme123">📸 Johanna Forero (6 photos)</option>
+                <option value="jackfdfnnelly@gmail.com|demo123">🎭 Jack Connelly (Actor)</option>
+                <option value="teopasqualemusic@gmail.com|demo123">🎭 Matteo Pasquale Atkins (Actor)</option>
+                <option value="ogggbetwinner@gmail.com|demo123">🎭 Georgina Okon (Actor)</option>
+                <option value="ralphouterbridge@gmail.com|demo123">🎭 Ralph Outerbridge (Actor)</option>
+                <option value="super.agent@castingly.com|demo123">🎬 Super Agent (Agent)</option>
+                <option value="indie.casting@castingly.com|demo123">🎯 Indie Casting (Casting Director)</option>
+                <option value="admin@dailey.cloud|demo123">🛡️ Admin User (Admin)</option>
+                <option value="ellewootsionn@gmail.com|demo123">🎭 Elle Wootsionn (Actor)</option>
               </select>
             </div>
           )}
@@ -399,7 +452,7 @@ export const SideNav: React.FC = () => {
                 <div>
                   <img
                     className="inline-block h-9 w-9 rounded-full"
-                    src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.name}`}
+                    src={avatarSrc || user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`}
                     alt={user.name}
                   />
                 </div>

@@ -3,8 +3,8 @@
   "version": "2.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:tailscale": "next dev -H 0.0.0.0 -p 3002",
+    "dev": "WATCHPACK_POLLING=true WATCHPACK_POLLING_INTERVAL=1000 next dev -p 4874",
+    "dev:tailscale": "WATCHPACK_POLLING=true WATCHPACK_POLLING_INTERVAL=1000 next dev -H 0.0.0.0 -p 4874",
     "dev:watch": "nodemon",
     "build": "next build",
     "start": "next start",

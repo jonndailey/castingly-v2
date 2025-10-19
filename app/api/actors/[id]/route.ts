@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { actors } from '@/lib/db_existing'
 import { validateUserToken, type DmapiFile } from '@/lib/dmapi'
-import { listActorFiles as listActorDmapiFiles } from '@/lib/server/dmapi-service'
+import { listActorFiles as listActorDmapiFiles, listFiles as listDmapiFiles, listBucketFolder } from '@/lib/server/dmapi-service'
 
 type LegacyMediaRecord = {
   id?: number | string
@@ -67,14 +67,51 @@ export async function GET(
 
     let dmapiFiles: DmapiFile[] = []
     try {
-      const dmapiResponse = await listActorDmapiFiles(actor.id, {
-        limit: 500,
-        sort: 'uploaded_at',
-        order: 'desc',
-      })
-      dmapiFiles = (dmapiResponse.files ?? []).filter((file) =>
-        matchesActor(file, actor)
-      )
+      // Prefer exact bucket-folder listing to avoid search/indexing mismatches
+      const listUserId = process.env.DMAPI_LIST_USER_ID || process.env.DMAPI_SERVICE_SUBJECT_ID
+      if (listUserId) {
+        try {
+          const folder = await listBucketFolder({
+            bucketId: 'castingly-public',
+            userId: String(listUserId),
+            path: `actors/${actor.id}/headshots`,
+          })
+          dmapiFiles = (folder.files ?? []) as unknown as DmapiFile[]
+        } catch {}
+      }
+
+      // If nothing, fall back to /api/files by metadata and then loose search
+      if (dmapiFiles.length === 0) {
+        const dmapiResponse = await listActorDmapiFiles(actor.id, {
+          limit: 500,
+          sort: 'uploaded_at',
+          order: 'desc',
+          useMetadataFilter: false,
+        })
+        dmapiFiles = (dmapiResponse.files ?? []).filter((file) => matchesActor(file, actor))
+      }
+      // Fallback: use a search by folder path if nothing returned (ensure app_id is included)
+      if (dmapiFiles.length === 0) {
+        try {
+          const alt = await listDmapiFiles({ limit: 500, sort: 'uploaded_at', order: 'desc', search: `actors/${actor.id}/` })
+          dmapiFiles = (alt.files ?? []).filter((file) => matchesActor(file, actor))
+        } catch {}
+      }
+
+      // Second fallback: list the exact bucket folder if still empty
+      if (dmapiFiles.length === 0) {
+        const listUserId = process.env.DMAPI_LIST_USER_ID || process.env.DMAPI_SERVICE_SUBJECT_ID
+        if (listUserId) {
+          try {
+            const folder = await listBucketFolder({
+              bucketId: 'castingly-public',
+              userId: String(listUserId),
+              path: `actors/${actor.id}/headshots`,
+            })
+            dmapiFiles = (folder.files ?? []) as unknown as DmapiFile[]
+          } catch {}
+        }
+      }
     } catch (error) {
       console.error('Failed to fetch DMAPI media for actor:', error)
     }
@@ -152,7 +189,11 @@ function matchesActor(file: DmapiFile, actor: any) {
     String(actorMetadata.email).toLowerCase() ===
       String(actor.email).toLowerCase()
 
-  return matchesLegacyId || matchesEmail || !metadata.sourceActorId
+  // Match by folder path if present: actors/{id}/...
+  const folder = String((metadata as any).folderPath || (metadata as any).folder_path || '').toLowerCase()
+  const matchesFolder = folder.includes(`/actors/${String(actor.id).toLowerCase()}/`) || folder.endsWith(`/actors/${String(actor.id).toLowerCase()}`) || folder.includes(`actors/${String(actor.id).toLowerCase()}/`)
+
+  return matchesLegacyId || matchesEmail || matchesFolder || !metadata.sourceActorId
 }
 
 function categoriseDmapiFiles(files: DmapiFile[]): CategorisedMedia {
@@ -169,11 +210,20 @@ function categoriseDmapiFiles(files: DmapiFile[]): CategorisedMedia {
 
   for (const file of files) {
     const metadata = (file.metadata || {}) as Record<string, unknown>
-    const category = normalizeCategory(
-      (metadata.category as string) ||
-        (Array.isArray(metadata.tags) ? (metadata.tags[0] as string) : '') ||
-        inferCategoryFromMime(file.mime_type)
+    const metaCat = normalizeCategory((metadata.category as string) || null)
+    const tagCat = normalizeCategory(
+      Array.isArray(metadata.tags) && metadata.tags.length > 0
+        ? (metadata.tags[0] as string)
+        : null
     )
+    const folderCat = inferCategoryFromFolder(metadata)
+    const mimeCat = inferCategoryFromMime(file.mime_type)
+    // Prefer folder/tag/mime over generic categories like 'other' or raw 'image'
+    const category =
+      (folderCat && normalizeCategory(folderCat)) ||
+      (tagCat && tagCat !== 'other' ? tagCat : null) ||
+      ((metaCat && metaCat !== 'other' && metaCat !== 'image') ? metaCat : null) ||
+      mimeCat
 
     const simplified: SimplifiedMedia = {
       id: file.id,
@@ -333,7 +383,13 @@ function resolveVisibility(
       ''
   ).toLowerCase()
 
-  return access === 'public' ? 'public' : 'private'
+  if (access === 'public') return 'public'
+
+  // Treat files in the public bucket as public (DMAPI may default access flags)
+  const bucketId = String((metadata as any).bucketId || (metadata as any).bucket_id || '').toLowerCase()
+  if (bucketId === 'castingly-public') return 'public'
+
+  return 'private'
 }
 
 function determineLegacyVisibility(category: string): 'public' | 'private' {
@@ -364,6 +420,20 @@ function normalizeCategory(value?: string | null): string {
     default:
       return normalized
   }
+}
+
+function inferCategoryFromFolder(metadata: Record<string, unknown>): string | undefined {
+  const folder = String(
+    (metadata as any).folderPath || (metadata as any).folder_path || ''
+  ).toLowerCase()
+  if (!folder) return undefined
+  if (folder.includes('headshot')) return 'headshot'
+  if (folder.includes('reel')) return 'reel'
+  if (folder.includes('voice')) return 'voice_over'
+  if (folder.includes('resume')) return 'resume'
+  if (folder.includes('self-tape') || folder.includes('self_tape')) return 'self_tape'
+  if (folder.includes('document')) return 'document'
+  return undefined
 }
 
 function inferCategoryFromMime(mime: string): string {

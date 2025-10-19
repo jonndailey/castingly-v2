@@ -23,6 +23,10 @@ const DMAPI_SERVICE_PASSWORD =
   process.env.DMAPI_MIGRATION_PASSWORD ||
   process.env.DAILEY_CORE_ADMIN_PASSWORD
 
+// Optional subject scoping for list operations (e.g., 'test-user-id')
+const DMAPI_LIST_USER_ID =
+  process.env.DMAPI_LIST_USER_ID || process.env.DMAPI_SERVICE_SUBJECT_ID || undefined
+
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE'
 
 interface AuthPayload {
@@ -41,6 +45,7 @@ export interface ServiceListParams {
   visibility?: 'public' | 'private'
   metadata?: Record<string, string | number | boolean | undefined | null>
   includeAppId?: boolean
+  useMetadataFilter?: boolean
   sort?: string
   order?: 'asc' | 'desc'
 }
@@ -54,6 +59,22 @@ interface ServiceListResponse {
     offset: number
     has_more: boolean
   }
+}
+
+// Bucket folder listing response (via /api/buckets/:bucketId/files)
+interface BucketFolderResponseItem extends DmapiFile {
+  user_id?: string
+  bucket_id?: string
+  folder_path?: string
+  path?: string
+  is_folder?: boolean
+}
+
+interface BucketFolderResponse {
+  success: boolean
+  files: BucketFolderResponseItem[]
+  current_path?: string
+  bucket_id?: string
 }
 
 interface CachedToken {
@@ -184,12 +205,13 @@ function buildQueryString(params?: ServiceListParams) {
     searchParams.set('visibility', params.visibility)
   }
 
+  // Map to DMAPI's expected names
   if (params?.sort) {
-    searchParams.set('sort', params.sort)
+    searchParams.set('order_by', params.sort)
   }
 
   if (params?.order) {
-    searchParams.set('order', params.order)
+    searchParams.set('order_direction', params.order)
   }
 
   if (params?.metadata) {
@@ -289,15 +311,107 @@ export async function listActorFiles(
 ) {
   const metadata = {
     ...(options.metadata || {}),
-    sourceActorId: actorId,
+    ...(options.useMetadataFilter === false ? {} : { sourceActorId: actorId }),
   }
 
   return listFiles({
     ...options,
+    ...(DMAPI_LIST_USER_ID ? { userId: DMAPI_LIST_USER_ID } : {}),
     metadata,
   })
 }
 
+/**
+ * List a bucket folder path for a given user scope.
+ */
+export async function listBucketFolder(options: {
+  bucketId: string
+  userId: string
+  path: string
+  includeAppId?: boolean
+}) {
+  const searchParams = new URLSearchParams()
+  if (!options.includeAppId) {
+    searchParams.set('app_id', DMAPI_APP_ID)
+  }
+
+  // DMAPI expects the first segment of `path` to be the user id
+  const normalizedPath = `${options.userId.replace(/\/+$/, '')}/${String(options.path || '')
+    .replace(/^\/+/, '')}`
+  searchParams.set('path', normalizedPath)
+
+  return serviceFetch<BucketFolderResponse>(
+    `/api/buckets/${encodeURIComponent(options.bucketId)}/files?${searchParams.toString()}`
+  )
+}
+
 export function clearServiceTokenCache() {
   cachedToken = null
+}
+
+export async function uploadFileForActor(options: {
+  actorId: string | number
+  file: File | Blob
+  filename: string
+  category: 'headshot' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other'
+  metadata?: Record<string, unknown>
+  bucketId?: string
+  folderPath?: string
+  access?: 'public' | 'private'
+}) {
+  const token = await obtainServiceToken()
+
+  // Compute storage location if not provided
+  let bucketId = options.bucketId
+  let folderPath = options.folderPath
+  let access = options.access
+  if (!bucketId || !folderPath || !access) {
+    // Lazy import to avoid circular deps at module init
+    const { resolveStorageLocation } = await import('@/lib/dmapi')
+    const loc = resolveStorageLocation(String(options.actorId), options.category)
+    bucketId = loc.bucketId
+    folderPath = loc.folderPath
+    access = loc.access
+  }
+
+  const form = new FormData()
+  form.append('file', options.file, options.filename)
+  form.append('bucket_id', String(bucketId))
+  form.append('folder_path', String(folderPath))
+  form.append('app_id', DMAPI_APP_ID)
+
+  const metadata = {
+    category: options.category,
+    tags: [options.category],
+    bucketAccess: access,
+    access,
+    source: 'castingly',
+    sourceActorId: String(options.actorId),
+    ...options.metadata,
+  }
+  form.append('metadata', JSON.stringify(metadata))
+
+  const response = await fetch(`${ensureBaseUrl(DMAPI_BASE_URL)}/api/upload`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'User-Agent': 'Castingly/DMAPI-Service',
+    },
+    body: form as unknown as BodyInit,
+  })
+
+  if (!response.ok) {
+    let errorBody: any = null
+    try {
+      errorBody = await response.json()
+    } catch {}
+    const message = errorBody?.error || errorBody?.message || 'DMAPI upload failed'
+    throw new Error(message)
+  }
+
+  try {
+    return await response.json()
+  } catch {
+    return { success: true }
+  }
 }
