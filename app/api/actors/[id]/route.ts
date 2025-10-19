@@ -67,7 +67,7 @@ export async function GET(
 
     let dmapiFiles: DmapiFile[] = []
     try {
-      // Prefer exact bucket-folder listing to avoid search/indexing mismatches
+      // 1) Prefer exact bucket-folder listing for headshots so avatar and primary photos appear
       const listUserId = process.env.DMAPI_LIST_USER_ID || process.env.DMAPI_SERVICE_SUBJECT_ID
       if (listUserId) {
         try {
@@ -80,38 +80,19 @@ export async function GET(
         } catch {}
       }
 
-      // If nothing, fall back to /api/files by metadata and then loose search
-      if (dmapiFiles.length === 0) {
-        const dmapiResponse = await listActorDmapiFiles(actor.id, {
-          limit: 500,
-          sort: 'uploaded_at',
-          order: 'desc',
-          useMetadataFilter: false,
-        })
-        dmapiFiles = (dmapiResponse.files ?? []).filter((file) => matchesActor(file, actor))
-      }
-      // Fallback: use a search by folder path if nothing returned (ensure app_id is included)
-      if (dmapiFiles.length === 0) {
-        try {
-          const alt = await listDmapiFiles({ limit: 500, sort: 'uploaded_at', order: 'desc', search: `actors/${actor.id}/` })
-          dmapiFiles = (alt.files ?? []).filter((file) => matchesActor(file, actor))
-        } catch {}
-      }
-
-      // Second fallback: list the exact bucket folder if still empty
-      if (dmapiFiles.length === 0) {
-        const listUserId = process.env.DMAPI_LIST_USER_ID || process.env.DMAPI_SERVICE_SUBJECT_ID
-        if (listUserId) {
-          try {
-            const folder = await listBucketFolder({
-              bucketId: 'castingly-public',
-              userId: String(listUserId),
-              path: `actors/${actor.id}/headshots`,
-            })
-            dmapiFiles = (folder.files ?? []) as unknown as DmapiFile[]
-          } catch {}
+      // 2) Broaden: fetch a wider batch and filter by actor (folder/email/metadata)
+      try {
+        const alt = await listDmapiFiles({ limit: 500, sort: 'uploaded_at', order: 'desc' })
+        const broader = (alt.files ?? []).filter((file) => matchesActor(file, actor))
+        // Merge unique by id
+        const seen = new Set(dmapiFiles.map(f => f.id))
+        for (const f of broader) {
+          if (!seen.has(f.id)) {
+            dmapiFiles.push(f)
+            seen.add(f.id)
+          }
         }
-      }
+      } catch {}
     } catch (error) {
       console.error('Failed to fetch DMAPI media for actor:', error)
     }

@@ -157,6 +157,22 @@ export default function ActorProfile() {
     }
   }, [selectedImage, imageGallery])
 
+  // Hidden uploader at root so any section can trigger it
+  const renderGlobalUploader = () => (
+    <>
+      <input
+        id="profile-upload-input"
+        type="file"
+        className="hidden"
+        onChange={onFileSelected}
+        accept="image/*,video/*,application/pdf,audio/*"
+      />
+      {uploadMessage && (
+        <div className="mb-3 text-sm text-gray-600">{uploadMessage}</div>
+      )}
+    </>
+  )
+
   // Upload helpers
   const startUpload = useCallback((category: 'headshot' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other') => {
     setPendingCategory(category)
@@ -714,6 +730,9 @@ export default function ActorProfile() {
             </motion.div>
           )}
           
+          {/* Global uploader to support buttons across tabs */}
+          {renderGlobalUploader()}
+
           {activeTab === 'media' && (
             <motion.div
               key="media"
