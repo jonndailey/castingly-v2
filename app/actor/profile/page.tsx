@@ -17,6 +17,7 @@ import {
   Film,
   Award,
   Languages,
+  FileText,
   Edit,
   Save,
   Upload,
@@ -40,16 +41,16 @@ import { useActorProfile, type ActorMediaEntry } from '@/lib/hooks/useActorData'
 // Mock data for the profile
 const profileData = {
   basicInfo: {
-    name: 'Dan Actor',
-    email: 'danactor@email.com',
+    name: 'Jack Connelly',
+    email: 'jackfdfnnelly@gmail.com',
     phone: '(555) 123-4567',
     location: 'Los Angeles, CA',
     dateOfBirth: '1990-05-15',
     gender: 'Male',
     union: 'SAG-AFTRA',
-    website: 'www.danactor.com',
-    instagram: '@danactor',
-    twitter: '@danactor'
+    website: 'www.jackconnelly.com',
+    instagram: '@jackconnelly',
+    twitter: '@jackconnelly'
   },
   physicalAttributes: {
     height: "5'10\"",
@@ -97,12 +98,16 @@ const archetypesList = [
 
 export default function ActorProfile() {
   const router = useRouter()
-  const { user, logout } = useAuthStore()
+  const { user, logout, token } = useAuthStore()
   const { profile: actorData, loading, error } = useActorProfile(user?.id)
   const [isEditing, setIsEditing] = useState(false)
+  const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string }>({})
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string; index: number } | null>(null)
   const [imageGallery, setImageGallery] = useState<Array<{ src: string; alt: string }>>([])
+  const [uploading, setUploading] = useState(false)
+  const [uploadMessage, setUploadMessage] = useState<string>('')
+  const [pendingCategory, setPendingCategory] = useState<'headshot' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other'>('headshot')
 
   const headshots = (actorData?.media?.headshots ?? []).filter((entry) =>
     Boolean(entry.url || entry.signed_url || entry.thumbnail_url)
@@ -151,6 +156,44 @@ export default function ActorProfile() {
       })
     }
   }, [selectedImage, imageGallery])
+
+  // Upload helpers
+  const startUpload = useCallback((category: 'headshot' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other') => {
+    setPendingCategory(category)
+    const input = document.getElementById('profile-upload-input') as HTMLInputElement | null
+    input?.click()
+  }, [])
+
+  const onFileSelected = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !token || !user?.id) return
+
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('title', file.name)
+      form.append('category', pendingCategory)
+      const res = await fetch(`/api/media/actor/${encodeURIComponent(String(user.id))}/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || 'Upload failed')
+      }
+      setUploadMessage('Uploaded successfully')
+      setTimeout(() => setUploadMessage(''), 2500)
+      router.refresh()
+    } catch (err: any) {
+      setUploadMessage(err?.message || 'Upload failed')
+      setTimeout(() => setUploadMessage(''), 3500)
+    } finally {
+      setUploading(false)
+    }
+  }, [pendingCategory, token, user?.id, router])
   
   // Keyboard navigation for modal
   useEffect(() => {
@@ -195,6 +238,55 @@ export default function ActorProfile() {
   const publicProfileUrl = `castingly.com/talent/${userSlug}`
   const fullPublicProfileUrl = `https://castingly.com/talent/${userSlug}`
   const localProfileUrl = `/talent/${userSlug}`
+
+  useEffect(() => {
+    if (actorData) {
+      setEdit({
+        phone: actorData.phone || '',
+        location: actorData.location || '',
+        website: actorData.website || '',
+        instagram: actorData.instagram || '',
+        twitter: actorData.twitter || '',
+        bio: actorData.bio || '',
+        resume_url: actorData.resume_url || '',
+        height: actorData.height || '',
+        eye_color: actorData.eye_color || '',
+        hair_color: actorData.hair_color || '',
+      })
+    }
+  }, [actorData])
+
+  const handleSave = async () => {
+    try {
+      if (!user) return
+      const res = await fetch(`/api/actors/${user.id}/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(useAuthStore.getState().token
+            ? { Authorization: `Bearer ${useAuthStore.getState().token}` }
+            : {}),
+        },
+        body: JSON.stringify({
+          phone: edit.phone,
+          location: edit.location,
+          website: edit.website,
+          instagram: edit.instagram,
+          twitter: edit.twitter,
+          bio: edit.bio,
+          resume_url: edit.resume_url,
+          height: edit.height,
+          eye_color: edit.eye_color,
+          hair_color: edit.hair_color,
+        }),
+      })
+      if (!res.ok) throw new Error('Failed to save profile')
+      setIsEditing(false)
+      window.location.reload()
+    } catch (e) {
+      alert('Failed to save profile')
+    }
+  }
   
   if (loading) {
     return (
@@ -251,7 +343,7 @@ export default function ActorProfile() {
               Upload Media
             </Button>
             <Button
-              onClick={() => setIsEditing(!isEditing)}
+              onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
               variant={isEditing ? 'default' : 'outline'}
             >
               {isEditing ? (
@@ -357,7 +449,16 @@ export default function ActorProfile() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex items-center gap-2 text-sm">
                       <MapPin className="w-4 h-4 text-gray-400" />
-                      <span>{actorData?.location || 'Los Angeles'}</span>
+                      {isEditing ? (
+                        <input
+                          className="border rounded px-2 py-1 text-sm"
+                          value={edit.location || ''}
+                          onChange={(e) => setEdit((s) => ({ ...s, location: e.target.value }))}
+                          placeholder="Location"
+                        />
+                      ) : (
+                        <span>{actorData?.location || 'Los Angeles'}</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <Mail className="w-4 h-4 text-gray-400" />
@@ -365,7 +466,16 @@ export default function ActorProfile() {
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <Phone className="w-4 h-4 text-gray-400" />
-                      <span>{actorData?.phone || 'Not provided'}</span>
+                      {isEditing ? (
+                        <input
+                          className="border rounded px-2 py-1 text-sm"
+                          value={edit.phone || ''}
+                          onChange={(e) => setEdit((s) => ({ ...s, phone: e.target.value }))}
+                          placeholder="Phone"
+                        />
+                      ) : (
+                        <span>{actorData?.phone || 'Not provided'}</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <Calendar className="w-4 h-4 text-gray-400" />
@@ -373,23 +483,32 @@ export default function ActorProfile() {
                     </div>
                   </div>
                   
-                  {/* Social Links */}
-                  <div className="flex gap-3 mt-4">
-                    {actorData?.website && (
-                      <Button size="sm" variant="ghost">
-                        <Globe className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {actorData?.instagram && (
-                      <Button size="sm" variant="ghost">
-                        <Instagram className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {actorData?.twitter && (
-                      <Button size="sm" variant="ghost">
-                        <Twitter className="w-4 h-4" />
-                      </Button>
-                    )}
+                  {/* Links */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Globe className="w-4 h-4 text-gray-400" />
+                      {isEditing ? (
+                        <input className="border rounded px-2 py-1 text-sm w-full" value={edit.website || ''} onChange={(e) => setEdit((s) => ({ ...s, website: e.target.value }))} placeholder="Website" />
+                      ) : (
+                        <span>{actorData?.website || '—'}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Instagram className="w-4 h-4 text-gray-400" />
+                      {isEditing ? (
+                        <input className="border rounded px-2 py-1 text-sm w-full" value={edit.instagram || ''} onChange={(e) => setEdit((s) => ({ ...s, instagram: e.target.value }))} placeholder="Instagram" />
+                      ) : (
+                        <span>{actorData?.instagram || '—'}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Twitter className="w-4 h-4 text-gray-400" />
+                      {isEditing ? (
+                        <input className="border rounded px-2 py-1 text-sm w-full" value={edit.twitter || ''} onChange={(e) => setEdit((s) => ({ ...s, twitter: e.target.value }))} placeholder="Twitter" />
+                      ) : (
+                        <span>{actorData?.twitter || '—'}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -504,13 +623,34 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   {isEditing ? (
-                    <textarea
-                      className="w-full p-3 border rounded-lg resize-none h-32"
-                      value={actorData?.bio || ''}
-                      onChange={(e) => {/* TODO: Implement bio editing */}}
-                    />
+                    <>
+                      <textarea
+                        className="w-full p-3 border rounded-lg resize-none h-32"
+                        value={edit.bio || ''}
+                        onChange={(e) => setEdit((s) => ({ ...s, bio: e.target.value }))}
+                        placeholder="Your professional bio"
+                      />
+                      <div className="mt-3 flex items-center gap-2 text-sm">
+                        <FileText className="w-4 h-4 text-gray-400" />
+                        <input
+                          className="border rounded px-2 py-1 text-sm w-full"
+                          value={edit.resume_url || ''}
+                          onChange={(e) => setEdit((s) => ({ ...s, resume_url: e.target.value }))}
+                          placeholder="Resume URL (PDF)"
+                        />
+                      </div>
+                    </>
                   ) : (
-                    <p className="text-gray-600">{actorData?.bio || 'No bio available'}</p>
+                    <>
+                      <p className="text-gray-600">{actorData?.bio || 'No bio available'}</p>
+                      {actorData?.resume_url && (
+                        <div className="mt-3 text-sm">
+                          <a className="text-primary-600 hover:text-primary-700" href={actorData.resume_url} target="_blank" rel="noreferrer">
+                            View Resume
+                          </a>
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -522,24 +662,30 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {actorData?.height && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Height:</span>
-                        <span className="font-medium">{actorData.height}</span>
-                      </div>
-                    )}
-                    {actorData?.eye_color && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Eye Color:</span>
-                        <span className="font-medium">{actorData.eye_color}</span>
-                      </div>
-                    )}
-                    {actorData?.hair_color && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Hair Color:</span>
-                        <span className="font-medium">{actorData.hair_color}</span>
-                      </div>
-                    )}
+                    <div className="flex justify-between items-center gap-3">
+                      <span className="text-gray-600">Height:</span>
+                      {isEditing ? (
+                        <input className="border rounded px-2 py-1 text-sm w-40" value={(edit as any).height || ''} onChange={(e) => setEdit((s) => ({ ...s, height: e.target.value }))} placeholder="e.g., 5 ft 10 in" />
+                      ) : (
+                        <span className="font-medium">{actorData?.height || '—'}</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center gap-3">
+                      <span className="text-gray-600">Eye Color:</span>
+                      {isEditing ? (
+                        <input className="border rounded px-2 py-1 text-sm w-40" value={(edit as any).eye_color || ''} onChange={(e) => setEdit((s) => ({ ...s, eye_color: e.target.value }))} placeholder="e.g., Blue" />
+                      ) : (
+                        <span className="font-medium">{actorData?.eye_color || '—'}</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center gap-3">
+                      <span className="text-gray-600">Hair Color:</span>
+                      {isEditing ? (
+                        <input className="border rounded px-2 py-1 text-sm w-40" value={(edit as any).hair_color || ''} onChange={(e) => setEdit((s) => ({ ...s, hair_color: e.target.value }))} placeholder="e.g., Brown" />
+                      ) : (
+                        <span className="font-medium">{actorData?.hair_color || '—'}</span>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -576,6 +722,17 @@ export default function ActorProfile() {
               exit={{ opacity: 0, x: 20 }}
               className="grid md:grid-cols-2 lg:grid-cols-3 gap-6"
             >
+              {/* Hidden uploader for media */}
+              <input
+                id="profile-upload-input"
+                type="file"
+                className="hidden"
+                onChange={onFileSelected}
+                accept="image/*,video/*,application/pdf,audio/*"
+              />
+              {uploadMessage && (
+                <div className="md:col-span-2 lg:col-span-3 text-sm text-gray-600">{uploadMessage}</div>
+              )}
               {/* Headshots */}
               <Card>
                 <CardHeader>
@@ -606,8 +763,13 @@ export default function ActorProfile() {
                         />
                       </div>
                     ))}
-                    <button className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-gray-400">
-                      <Plus className="w-6 h-6 text-gray-400" />
+                    <button
+                      onClick={() => startUpload('headshot')}
+                      disabled={uploading}
+                      className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-gray-400 disabled:opacity-50"
+                      title="Upload Headshot"
+                    >
+                      <Upload className="w-6 h-6 text-gray-400" />
                     </button>
                   </div>
                 </CardContent>
@@ -677,9 +839,69 @@ export default function ActorProfile() {
                         </div>
                       )
                     })}
-                    <Button variant="outline" fullWidth>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload Reel
+                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('reel')}>
+                      <Upload className="w-4 h-4 mr-2" /> Upload Reel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Voice Over */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Voice Over</CardTitle>
+                  <CardDescription>Audio samples</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {(actorData?.media?.voice_over ?? []).map((vo) => {
+                      const url = getMediaUrl(vo)
+                      return (
+                        <div key={vo.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                          <div className="flex items-center gap-3">
+                            <span className="font-medium">{vo.name || 'Voice Over'}</span>
+                          </div>
+                          {url && (
+                            <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
+                              Listen
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    })}
+                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('voice_over')}>
+                      <Upload className="w-4 h-4 mr-2" /> Upload Audio
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Resume / Documents */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Resume & Documents</CardTitle>
+                  <CardDescription>PDFs and other documents</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {(actorData?.media?.resumes ?? []).map((doc) => {
+                      const url = getMediaUrl(doc)
+                      return (
+                        <div key={doc.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                          <div className="flex items-center gap-3">
+                            <FileText className="h-5 w-5 text-primary-600" />
+                            <span className="font-medium">{doc.name || 'Resume'}</span>
+                          </div>
+                          {url && (
+                            <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
+                              View
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    })}
+                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('resume')}>
+                      <Upload className="w-4 h-4 mr-2" /> Upload Resume
                     </Button>
                   </div>
                 </CardContent>
