@@ -846,6 +846,37 @@ export default function ActorProfile() {
                 </CardContent>
               </Card>
 
+              {/* Self-Tapes */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Self-Tapes</CardTitle>
+                  <CardDescription>Audition self-tapes</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {(actorData?.media?.self_tapes ?? []).map((tape) => {
+                      const tapeUrl = getMediaUrl(tape)
+                      return (
+                        <div key={tape.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                          <div className="flex items-center gap-3">
+                            <Film className="h-5 w-5 text-primary-600" />
+                            <span className="font-medium">{tape.name || 'Self-Tape'}</span>
+                          </div>
+                          {tapeUrl && (
+                            <Button size="sm" variant="ghost" onClick={() => window.open(tapeUrl, '_blank')}>
+                              View
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    })}
+                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('self_tape')}>
+                      <Upload className="w-4 h-4 mr-2" /> Upload Self-Tape
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Voice Over */}
               <Card>
                 <CardHeader>
@@ -902,6 +933,37 @@ export default function ActorProfile() {
                     })}
                     <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('resume')}>
                       <Upload className="w-4 h-4 mr-2" /> Upload Resume
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Other Documents */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Other Documents</CardTitle>
+                  <CardDescription>Additional PDFs and files</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {(actorData?.media?.documents ?? []).map((doc) => {
+                      const url = getMediaUrl(doc)
+                      return (
+                        <div key={doc.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                          <div className="flex items-center gap-3">
+                            <FileText className="h-5 w-5 text-primary-600" />
+                            <span className="font-medium">{doc.name || 'Document'}</span>
+                          </div>
+                          {url && (
+                            <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
+                              View
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    })}
+                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('document')}>
+                      <Upload className="w-4 h-4 mr-2" /> Upload Document
                     </Button>
                   </div>
                 </CardContent>
