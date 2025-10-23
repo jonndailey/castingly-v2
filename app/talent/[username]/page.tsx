@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import useAuthStore from '@/lib/store/auth-store'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -23,6 +24,7 @@ export default function PublicTalentProfilePage() {
   const [profile, setProfile] = useState<Record<string, any> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { token } = useAuthStore()
 
   const headshotList = Array.isArray(profile?.headshots)
     ? (profile.headshots as Array<{ id: number; url: string; caption?: string }>)
@@ -49,7 +51,7 @@ export default function PublicTalentProfilePage() {
       console.log('Searching for actor with slug:', username)
       
       // First try to get all actors and find by generating slugs
-      const allActorsResponse = await fetch('/api/actors?limit=1000')
+      const allActorsResponse = await fetch('/api/actors?limit=1000', token ? { headers: { Authorization: `Bearer ${token}` } } as any : undefined)
       
       if (!allActorsResponse.ok) {
         throw new Error('Failed to fetch actors')
@@ -83,7 +85,7 @@ export default function PublicTalentProfilePage() {
       console.log('Found actor:', actor)
       
       // Fetch full actor details
-      const actorResponse = await fetch(`/api/actors/${actor.id}`)
+      const actorResponse = await fetch(`/api/actors/${actor.id}`, token ? { headers: { Authorization: `Bearer ${token}` } } as any : undefined)
       if (!actorResponse.ok) {
         throw new Error('Failed to fetch actor details')
       }

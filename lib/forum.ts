@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { query, transaction } from '@/lib/db_mysql'
+import { resolveWebAvatarUrl } from '@/lib/image-url'
 import { ensureForumSetup } from '@/lib/forum-setup'
 import type {
   ForumAccessLevel,
@@ -90,7 +91,7 @@ function mapPost(row: any): ForumPost {
       ? {
           id: row.author_id,
           name: row.author_name,
-          avatar_url: row.author_avatar_url,
+          avatar_url: resolveWebAvatarUrl(row.author_avatar_url, row.author_name),
           forum_display_name: row.author_forum_display_name,
           forum_signature: row.author_forum_signature,
           role: row.author_role
@@ -121,7 +122,7 @@ function mapReply(row: any): ForumReply {
       ? {
           id: row.author_id,
           name: row.author_name,
-          avatar_url: row.author_avatar_url,
+          avatar_url: resolveWebAvatarUrl(row.author_avatar_url, row.author_name),
           forum_display_name: row.author_forum_display_name,
           forum_signature: row.author_forum_signature,
           role: row.author_role
@@ -236,8 +237,8 @@ export const forumPosts = {
       `SELECT 
         fp.*,
         u.id as author_id,
-        CONCAT(u.first_name, ' ', u.last_name) as author_name,
-        u.profile_image as author_avatar_url,
+        u.name as author_name,
+        u.avatar_url as author_avatar_url,
         u.forum_display_name as author_forum_display_name,
         u.forum_signature as author_forum_signature,
         u.role as author_role
@@ -267,8 +268,8 @@ export const forumPosts = {
         fc.slug as category_slug,
         fc.access_level as category_access_level,
         u.id as author_id,
-        CONCAT(u.first_name, ' ', u.last_name) as author_name,
-        u.profile_image as author_avatar_url,
+        u.name as author_name,
+        u.avatar_url as author_avatar_url,
         u.forum_display_name as author_forum_display_name,
         u.forum_signature as author_forum_signature,
         u.role as author_role,
@@ -294,8 +295,8 @@ export const forumPosts = {
         fc.slug as category_slug,
         fc.access_level as category_access_level,
         u.id as author_id,
-        CONCAT(u.first_name, ' ', u.last_name) as author_name,
-        u.profile_image as author_avatar_url,
+        u.name as author_name,
+        u.avatar_url as author_avatar_url,
         u.forum_display_name as author_forum_display_name,
         u.forum_signature as author_forum_signature,
         u.role as author_role
@@ -319,8 +320,8 @@ export const forumPosts = {
         fc.slug as category_slug,
         fc.access_level as category_access_level,
         u.id as author_id,
-        CONCAT(u.first_name, ' ', u.last_name) as author_name,
-        u.profile_image as author_avatar_url,
+        u.name as author_name,
+        u.avatar_url as author_avatar_url,
         u.forum_display_name as author_forum_display_name,
         u.forum_signature as author_forum_signature,
         u.role as author_role
@@ -454,8 +455,8 @@ export const forumReplies = {
       `SELECT 
         fr.*,
         u.id as author_id,
-        CONCAT(u.first_name, ' ', u.last_name) as author_name,
-        u.profile_image as author_avatar_url,
+        u.name as author_name,
+        u.avatar_url as author_avatar_url,
         u.forum_display_name as author_forum_display_name,
         u.forum_signature as author_forum_signature,
         u.role as author_role
@@ -474,8 +475,8 @@ export const forumReplies = {
       `SELECT 
         fr.*,
         u.id as author_id,
-        CONCAT(u.first_name, ' ', u.last_name) as author_name,
-        u.profile_image as author_avatar_url,
+        u.name as author_name,
+        u.avatar_url as author_avatar_url,
         u.forum_display_name as author_forum_display_name,
         u.forum_signature as author_forum_signature,
         u.role as author_role
@@ -552,8 +553,8 @@ export const forumReplies = {
         fr.*,
         fp.title as post_title,
         u.id as author_id,
-        u.name as author_name,
-        u.avatar_url as author_avatar_url,
+        CONCAT(u.first_name, ' ', u.last_name) as author_name,
+        u.profile_image as author_avatar_url,
         u.forum_display_name as author_forum_display_name,
         u.forum_signature as author_forum_signature,
         u.role as author_role

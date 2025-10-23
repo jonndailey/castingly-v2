@@ -28,23 +28,15 @@ const nextConfig = {
   images: {
     domains: Array.from(imageDomains),
   },
-  // Enable PWA features
+  // Security headers. In development, avoid applying to Next's static assets
+  // so MIME issues from intermediaries don't block debugging.
   headers: async () => [
     {
       source: '/(.*)',
       headers: [
-        {
-          key: 'X-Content-Type-Options',
-          value: 'nosniff',
-        },
-        {
-          key: 'X-Frame-Options',
-          value: 'DENY',
-        },
-        {
-          key: 'X-XSS-Protection',
-          value: '1; mode=block',
-        },
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+        { key: 'X-Frame-Options', value: 'DENY' },
+        { key: 'X-XSS-Protection', value: '1; mode=block' },
       ],
     },
   ],

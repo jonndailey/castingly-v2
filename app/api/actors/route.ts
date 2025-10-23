@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { actors } from '@/lib/db_existing';
+import { resolveWebAvatarUrl } from '@/lib/image-url';
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,12 +19,17 @@ export async function GET(request: NextRequest) {
     } else {
       actorList = await actors.getAll(limit, offset);
     }
-    
+    // Sanitize avatar URLs to avoid local filesystem paths
+    const safeActors = (actorList as any[]).map((a: any) => ({
+      ...a,
+      avatar_url: resolveWebAvatarUrl(a.avatar_url, a.name)
+    }));
+
     // Get total count for pagination
     const totalCount = await actors.getCount();
     
     return NextResponse.json({
-      actors: actorList,
+      actors: safeActors,
       total: totalCount,
       limit,
       offset

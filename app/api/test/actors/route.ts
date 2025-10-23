@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { actors } from '@/lib/db_existing';
+// Use the new schema helpers (users + profiles) instead of the legacy schema
+import { actors } from '@/lib/db_mysql';
 
 // Simple test endpoint to verify database connection
 export async function GET(request: NextRequest) {

@@ -58,14 +58,21 @@ const LEGACY_DB_CONFIG = {
   password: process.env.DB_PASSWORD || '@0509man1hattaN',
 }
 
+// Allow per-DB overrides for production runs
 const DMAPI_DB_CONFIG = {
-  ...LEGACY_DB_CONFIG,
-  database: process.env.DMAPI_DATABASE || 'dailey_media',
+  host: process.env.DMAPI_DB_HOST || LEGACY_DB_CONFIG.host,
+  port: parseInt(process.env.DMAPI_DB_PORT || String(LEGACY_DB_CONFIG.port), 10),
+  user: process.env.DMAPI_DB_USER || LEGACY_DB_CONFIG.user,
+  password: process.env.DMAPI_DB_PASSWORD || LEGACY_DB_CONFIG.password,
+  database: process.env.DMAPI_DB_NAME || process.env.DMAPI_DATABASE || 'dailey_media',
 }
 
 const AUTH_DB_CONFIG = {
-  ...LEGACY_DB_CONFIG,
-  database: process.env.DAILEY_CORE_AUTH_DATABASE || 'dailey_core_auth',
+  host: process.env.AUTH_DB_HOST || LEGACY_DB_CONFIG.host,
+  port: parseInt(process.env.AUTH_DB_PORT || String(LEGACY_DB_CONFIG.port), 10),
+  user: process.env.AUTH_DB_USER || LEGACY_DB_CONFIG.user,
+  password: process.env.AUTH_DB_PASSWORD || LEGACY_DB_CONFIG.password,
+  database: process.env.AUTH_DB_NAME || process.env.DAILEY_CORE_AUTH_DATABASE || 'dailey_core_auth',
 }
 
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -474,6 +481,9 @@ async function uploadFile({ token, record, daileyUserId, skipIds }) {
     originalPath: record.mediaUrl,
     isPrimary: record.isPrimary,
     migratedAt: new Date().toISOString(),
+    // prevent DMAPI from generating redundant thumbnails/variants
+    skipVariants: true,
+    skipThumbnails: true,
     actor: {
       email: record.email,
       firstName: record.firstName,
@@ -612,7 +622,7 @@ async function run() {
       return
     }
 
-    const token = await acquireServiceToken()
+    let token = await acquireServiceToken()
 
     let processed = 0
     let uploaded = 0
@@ -649,6 +659,7 @@ async function run() {
         let attempt = 0
         let result = null
 
+        let refreshedAuth = false
         while (attempt < RATE_LIMIT_RETRIES) {
           try {
             result = await uploadFile({
@@ -661,6 +672,8 @@ async function run() {
           } catch (error) {
             const isRateLimit =
               error instanceof Error && /rate limit exceeded/i.test(error.message)
+            const isAuthError =
+              error instanceof Error && /(invalid token|authentication required|unauthorized)/i.test(error.message)
 
             if (isRateLimit && attempt < RATE_LIMIT_RETRIES - 1) {
               attempt += 1
@@ -670,6 +683,17 @@ async function run() {
               )
               await sleep(waitMs)
               continue
+            }
+
+            if (isAuthError && !refreshedAuth) {
+              console.warn(`🔑 Auth error detected for media ${record.mediaId}; refreshing token and retrying once`)
+              try {
+                token = await acquireServiceToken()
+                refreshedAuth = true
+                continue
+              } catch (authErr) {
+                throw authErr
+              }
             }
 
             throw error

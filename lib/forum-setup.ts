@@ -144,14 +144,14 @@ async function seedDefaultCategories() {
 
 async function findUserByRole(role: 'actor' | 'agent' | 'casting_director' | 'admin') {
   const rows = await query(
-    `SELECT id, first_name, last_name FROM users WHERE role = ? ORDER BY created_at ASC LIMIT 1`,
+    `SELECT id, name FROM users WHERE role = ? ORDER BY created_at ASC LIMIT 1`,
     [role]
-  ) as Array<{ id: string; first_name?: string; last_name?: string }>
+  ) as Array<{ id: string; name?: string }>
 
   return rows.length
     ? {
         id: rows[0].id,
-        name: `${rows[0].first_name ?? ''} ${rows[0].last_name ?? ''}`.trim() || role
+        name: (rows[0].name || role)
       }
     : null
 }

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { actors } from '@/lib/db_existing'
+import { actors, auth as legacyAuth } from '@/lib/db_existing'
+import { resolveWebAvatarUrl } from '@/lib/image-url'
 import { validateUserToken, type DmapiFile } from '@/lib/dmapi'
 import { listActorFiles as listActorDmapiFiles, listFiles as listDmapiFiles, listBucketFolder } from '@/lib/server/dmapi-service'
+import { daileyCoreAuth } from '@/lib/auth/dailey-core'
 
 type LegacyMediaRecord = {
   id?: number | string
@@ -47,7 +49,54 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params
-    const actor = await actors.getById(id)
+    let actor = await actors.getById(id)
+
+    // Fallback: if no legacy record by id (e.g., Core UUID passed), try by email from token
+    if (!actor) {
+      try {
+        const authHeader = request.headers.get('authorization')
+        const authInfo = await validateUserToken(authHeader)
+        if (authInfo?.email) {
+          const legacyUser = await legacyAuth.findByEmail(authInfo.email)
+          if (legacyUser?.id) {
+            actor = await actors.getById(String(legacyUser.id))
+          }
+        }
+      } catch {
+        // ignore and continue to 404 below
+      }
+    }
+
+    // Last-resort: build a minimal actor from Core token so profile can render
+    if (!actor) {
+      try {
+        const authHeader = request.headers.get('authorization')
+        const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : null
+        if (token) {
+          const validated = await daileyCoreAuth.validateToken(token)
+          if (validated?.valid && validated.user) {
+            const u = validated.user
+            actor = {
+              id: String(u.id),
+              email: String(u.email),
+              name: typeof u.name === 'string' && u.name ? u.name : String(u.email).split('@')[0],
+              role: 'actor',
+              profile_image: u.profile_image || null,
+              bio: null,
+              skills: null,
+              height: null,
+              eye_color: null,
+              hair_color: null,
+              location: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            } as any
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
 
     if (!actor) {
       return NextResponse.json(
@@ -56,7 +105,7 @@ export async function GET(
       )
     }
 
-    const legacyMedia = (await actors.getMedia(id)) as LegacyMediaRecord[]
+    const legacyMedia = (await actors.getMedia(String((actor as any).id))) as LegacyMediaRecord[]
 
     const skillsArray = parseSkills(actor.skills)
 
@@ -76,7 +125,69 @@ export async function GET(
             userId: String(listUserId),
             path: `actors/${actor.id}/headshots`,
           })
-          dmapiFiles = (folder.files ?? []) as unknown as DmapiFile[]
+          const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
+          try { console.log('[actors/:id] bucket list files', { count: (folder.files||[]).length, base, listUserId: String(listUserId), actorId: String(actor.id) }); } catch {}
+          const mapped: DmapiFile[] = (folder.files || []).map((it: any) => {
+            const name: string = String(it.name || '')
+            const path: string = String(it.path || '')
+            const ext = name.toLowerCase().split('.').pop() || ''
+            const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : 'application/octet-stream'
+            const tail = path.replace(/^.*?\//, '') // drop the leading user id segment
+            const publicUrl = base ? `${base}/api/serve/files/${encodeURIComponent(String(listUserId))}/castingly-public/${tail ? tail + '/' : ''}${encodeURIComponent(name)}` : null
+            return {
+              id: `${actor.id}-${name}-${Math.random().toString(36).slice(2,8)}`,
+              original_filename: name,
+              file_size: Number(it.size || 0),
+              mime_type: mime,
+              file_extension: ext,
+              uploaded_at: new Date().toISOString(),
+              public_url: publicUrl,
+              signed_url: null,
+              thumbnail_url: publicUrl,
+              metadata: {
+                bucketId: 'castingly-public',
+                folderPath: `actors/${actor.id}/headshots`,
+                source: 'castingly',
+              }
+            } as unknown as DmapiFile
+          })
+          dmapiFiles = mapped
+          try { console.log('[actors/:id] mapped dmapi files', { count: dmapiFiles.length }); } catch {}
+        } catch {}
+      }
+
+      // Also try private resumes via bucket listing and proxy
+      if (listUserId) {
+        try {
+          const folder = await listBucketFolder({
+            bucketId: 'castingly-private',
+            userId: String(listUserId),
+            path: `actors/${actor.id}/resumes`,
+          })
+          const baseProxy = '/api/media/proxy'
+          const resumes: DmapiFile[] = (folder.files || []).map((it: any) => {
+            const name: string = String(it.name || '')
+            const ext = name.toLowerCase().split('.').pop() || ''
+            const mime = ext === 'pdf' ? 'application/pdf' : 'application/octet-stream'
+            const signed = `${baseProxy}?bucket=castingly-private&userId=${encodeURIComponent(String(listUserId))}&path=${encodeURIComponent(`actors/${actor.id}/resumes`)}&name=${encodeURIComponent(name)}`
+            return {
+              id: `${actor.id}-resume-${name}-${Math.random().toString(36).slice(2,8)}`,
+              original_filename: name,
+              file_size: Number(it.size || 0),
+              mime_type: mime,
+              file_extension: ext,
+              uploaded_at: new Date().toISOString(),
+              public_url: null,
+              signed_url: signed,
+              thumbnail_url: null,
+              metadata: {
+                bucketId: 'castingly-private',
+                folderPath: `actors/${actor.id}/resumes`,
+                source: 'castingly',
+              }
+            } as unknown as DmapiFile
+          })
+          dmapiFiles.push(...resumes)
         } catch {}
       }
 
@@ -131,7 +242,7 @@ export async function GET(
       height: actor.height,
       eye_color: actor.eye_color,
       hair_color: actor.hair_color,
-      profile_image: actor.profile_image,
+      profile_image: resolveWebAvatarUrl(actor.profile_image, actor.name),
       resume_url: actor.resume_url,
       location: actor.location || 'Los Angeles',
       media,

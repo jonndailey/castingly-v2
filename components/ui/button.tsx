@@ -101,7 +101,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       return (
         <SlotComp
           ref={ref as any}
-          className={cn(buttonVariants({ variant, size, fullWidth, className }))}
+          className={cn(buttonVariants({ variant, size, fullWidth }), className)}
           aria-disabled={disabled || loading || undefined}
           data-loading={loading ? '' : undefined}
           data-disabled={disabled || loading ? '' : undefined}
@@ -114,7 +114,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     return (
       <motion.button
-        className={cn(buttonVariants({ variant, size, fullWidth, className }))}
+        className={cn(buttonVariants({ variant, size, fullWidth }), className)}
         ref={ref}
         disabled={disabled || loading}
         whileTap={{ scale: 0.98 }}

@@ -18,11 +18,11 @@ export async function GET() {
     ) as any
 
     const [activeUsersResult] = await connection.execute(
-      "SELECT COUNT(*) as total FROM users WHERE COALESCE(status, 'active') = 'active'"
+      'SELECT COUNT(*) as total FROM users WHERE is_active = TRUE'
     ) as any
 
     const [inactiveUsersResult] = await connection.execute(
-      "SELECT COUNT(*) as total FROM users WHERE status = 'inactive'"
+      'SELECT COUNT(*) as total FROM users WHERE is_active = FALSE'
     ) as any
 
     const [newThisMonthResult] = await connection.execute(

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import mysql from 'mysql2/promise'
+import { resolveWebAvatarUrl } from '@/lib/image-url'
 
 const dbConfig = {
   host: process.env.DB_HOST,
@@ -71,8 +72,13 @@ export async function GET(request: NextRequest) {
 
     await connection.end()
 
+    const sanitizedUsers = (users as any[]).map((u: any) => ({
+      ...u,
+      profile_image: resolveWebAvatarUrl(u.profile_image, u.name)
+    }))
+
     return NextResponse.json({
-      users,
+      users: sanitizedUsers,
       currentPage: page,
       totalPages,
       total,

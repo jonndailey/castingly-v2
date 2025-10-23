@@ -141,7 +141,7 @@ async function authenticateService(): Promise<AuthPayload> {
   return payload
 }
 
-async function obtainServiceToken(forceRefresh = false): Promise<string> {
+export async function obtainServiceToken(forceRefresh = false): Promise<string> {
   if (!forceRefresh && cachedToken && cachedToken.expiresAt > Date.now()) {
     return cachedToken.token
   }
@@ -286,14 +286,23 @@ async function serviceFetch<T>(
 
 export async function listFiles(params: ServiceListParams = {}) {
   const query = buildQueryString(params)
-  return serviceFetch<ServiceListResponse>(`/api/files?${query}`)
+  const data = await serviceFetch<ServiceListResponse>(`/api/files?${query}`)
+  // Normalize any relative URLs to absolute DMAPI base
+  if (Array.isArray(data?.files)) {
+    for (const f of data.files) {
+      normalizeFileUrls(f)
+    }
+  }
+  return data
 }
 
 export async function getFile(fileId: string) {
   if (!fileId) {
     throw new Error('File ID is required')
   }
-  return serviceFetch<DmapiFile>(`/api/files/${fileId}`)
+  const f = await serviceFetch<DmapiFile>(`/api/files/${fileId}`)
+  normalizeFileUrls(f)
+  return f
 }
 
 export async function deleteFile(fileId: string) {
@@ -342,7 +351,14 @@ export async function listBucketFolder(options: {
 
   return serviceFetch<BucketFolderResponse>(
     `/api/buckets/${encodeURIComponent(options.bucketId)}/files?${searchParams.toString()}`
-  )
+  ).then((data) => {
+    if (Array.isArray(data?.files)) {
+      for (const f of data.files) {
+        normalizeFileUrls(f)
+      }
+    }
+    return data
+  })
 }
 
 export function clearServiceTokenCache() {
@@ -413,5 +429,28 @@ export async function uploadFileForActor(options: {
     return await response.json()
   } catch {
     return { success: true }
+  }
+}
+
+function ensureAbsoluteUrl(value?: string | null): string | null {
+  if (!value || typeof value !== 'string') return null
+  const v = value.trim()
+  if (!v) return null
+  if (/^https?:\/\//i.test(v)) return v
+  if (v.startsWith('/')) return `${ensureBaseUrl(DMAPI_BASE_URL)}${v}`
+  return v
+}
+
+function normalizeFileUrls(file: Partial<DmapiFile> & Record<string, any>) {
+  if (!file || typeof file !== 'object') return
+  file.public_url = ensureAbsoluteUrl(file.public_url)
+  file.signed_url = ensureAbsoluteUrl(file.signed_url)
+  file.thumbnail_url = ensureAbsoluteUrl(file.thumbnail_url)
+  file.thumbnail_signed_url = ensureAbsoluteUrl(file.thumbnail_signed_url)
+  // Some responses place the effective URL under `url`
+  if (file.url === undefined && file.public_url) {
+    file.url = file.public_url
+  } else if (typeof file.url === 'string') {
+    file.url = ensureAbsoluteUrl(file.url)
   }
 }

@@ -285,11 +285,6 @@ export const SideNav: React.FC = () => {
   
   const navItems = getNavItems()
 
-  // Don't show sidebar on non-authenticated pages or admin pages (admin has its own nav)
-  if (!user || pathname === '/login' || pathname === '/register' || pathname === '/' || pathname.startsWith('/admin')) {
-    return null
-  }
-
   // Resolve richer avatar for sidebar as well
   useEffect(() => {
     let cancelled = false
@@ -313,6 +308,11 @@ export const SideNav: React.FC = () => {
     loadAvatar()
     return () => { cancelled = true }
   }, [user?.id, user?.role, user?.avatar_url])
+  
+  // Don't show sidebar on non-authenticated pages or admin pages (admin has its own nav)
+  if (!user || pathname === '/login' || pathname === '/register' || pathname === '/' || pathname.startsWith('/admin')) {
+    return null
+  }
   
   return (
     <aside className="hidden md:flex md:flex-shrink-0">

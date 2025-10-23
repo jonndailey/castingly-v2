@@ -32,7 +32,7 @@ interface PrivacySettings {
 
 export default function PublicProfileConfigPage() {
   const router = useRouter()
-  const [profileUrl, setProfileUrl] = useState('danactor')
+  const [profileUrl, setProfileUrl] = useState('jackconnelly')
   const [isUrlAvailable, setIsUrlAvailable] = useState(true)
   const [profileEnabled, setProfileEnabled] = useState(true)
   const [copied, setCopied] = useState(false)

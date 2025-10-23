@@ -20,7 +20,7 @@ module.exports = {
         PORT: 4874,
         WATCHPACK_POLLING: 'true',
         WATCHPACK_POLLING_INTERVAL: '1000',
-        DMAPI_BASE_URL: 'http://localhost:4100',
+        DMAPI_BASE_URL: 'http://100.105.97.19:4100',
         DAILEY_CORE_AUTH_URL: 'http://100.105.97.19:3002',
         DMAPI_APP_ID: 'castingly',
         DMAPI_SERVICE_EMAIL: 'dmapi-service@castingly.com',

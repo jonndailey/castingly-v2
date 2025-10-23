@@ -3,6 +3,9 @@
  * Handles authentication with the centralized Dailey Core auth system
  */
 
+import { resolveWebAvatarUrl } from '@/lib/image-url'
+import { verifyJwtRS256 } from '@/lib/auth/jwks-verify'
+
 export interface DaileyCoreUser {
   id: string;
   email: string;
@@ -48,37 +51,55 @@ class DaileyCoreAuthClient {
   private baseUrl: string;
   private clientId: string;
   private clientSecret?: string;
+  private appSlug: string;
+  private tenantSlug?: string;
 
   constructor() {
-    this.baseUrl = process.env.NEXT_PUBLIC_DAILEY_CORE_AUTH_URL || 'http://100.105.97.19:3002';
-    this.clientId = 'castingly-client';
+    this.baseUrl =
+      process.env.DAILEY_CORE_AUTH_URL ||
+      process.env.NEXT_PUBLIC_DAILEY_CORE_AUTH_URL ||
+      'https://core.dailey.cloud';
+    // Only send a client id header if explicitly provided by env; Core may reject unknown IDs
+    this.clientId = process.env.DAILEY_CORE_CLIENT_ID;
     this.clientSecret = process.env.CASTINGLY_CLIENT_SECRET;
+    this.appSlug = process.env.DAILEY_CORE_APP_SLUG || 'castingly-portal';
+    this.tenantSlug = process.env.DAILEY_CORE_TENANT_SLUG || 'castingly';
   }
 
   /**
    * Authenticate user with Dailey Core
    */
   async login(email: string, password: string): Promise<DaileyCoreAuthResponse | DaileyCoreMfaChallengeResponse> {
-    console.log(`🎭 Castingly → Dailey Core Auth: Attempting login for ${email}`);
+    console.log(
+      `🎭 Castingly → Dailey Core Auth: Attempting login for ${email} (baseUrl=${this.baseUrl}, appSlug=${this.appSlug}, tenant=${this.tenantSlug || 'n/a'}, clientId=${this.clientId || 'n/a'})`
+    );
+
+    const payload: Record<string, unknown> = {
+      email,
+      password,
+      app_slug: this.appSlug,
+      ...(this.tenantSlug ? { tenant_slug: this.tenantSlug } : {}),
+    };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      // Align with DMAPI: send app slug via X-Client-Id (Core treats it as app slug)
+      'X-Client-Id': this.appSlug,
+      ...(this.tenantSlug ? { 'X-Tenant-Slug': this.tenantSlug } : {}),
+      'User-Agent': 'Castingly/2.0',
+    };
+    const debugPayload = { ...payload, password: '***' };
+    console.log('🔎 Core request payload:', debugPayload, 'headers:', headers);
     
     const response = await fetch(`${this.baseUrl}/auth/login`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Client-Id': this.clientId,
-        'User-Agent': 'Castingly/2.0'
-      },
-      body: JSON.stringify({
-        email,
-        password,
-        app_slug: 'castingly'
-      })
+      headers,
+      body: JSON.stringify(payload)
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('🎭 Dailey Core Auth Error:', data);
+      console.error('🎭 Dailey Core Auth Error:', { status: response.status, data });
       throw new Error(data.error || 'Authentication failed');
     }
 
@@ -111,8 +132,9 @@ class DaileyCoreAuthClient {
 
     const payload: Record<string, unknown> = {
       token: challengeToken,
-      app_slug: 'castingly',
-      app_name: 'Castingly'
+      app_slug: this.appSlug,
+      app_name: 'Castingly',
+      ...(this.tenantSlug ? { tenant_slug: this.tenantSlug } : {}),
     };
 
     if (code) {
@@ -123,13 +145,17 @@ class DaileyCoreAuthClient {
       payload.backup_code = backupCode;
     }
 
+    const mfaHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Castingly/2.0',
+    };
+    if (this.clientId) {
+      mfaHeaders['X-Client-Id'] = this.clientId;
+    }
+
     const response = await fetch(`${this.baseUrl}/auth/mfa/challenge`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Client-Id': this.clientId,
-        'User-Agent': 'Castingly/2.0'
-      },
+      headers: mfaHeaders,
       body: JSON.stringify(payload)
     });
 
@@ -149,20 +175,43 @@ class DaileyCoreAuthClient {
    */
   async validateToken(token: string): Promise<DaileyCoreValidateResponse | null> {
     try {
-      const response = await fetch(`${this.baseUrl}/auth/validate`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-Client-Id': this.clientId,
-          'User-Agent': 'Castingly/2.0'
-        }
-      });
-
-      if (!response.ok) {
-        return null;
+      const validateHeaders: Record<string, string> = {
+        'Authorization': `Bearer ${token}`,
+        'User-Agent': 'Castingly/2.0',
+      };
+      if (this.clientId) {
+        validateHeaders['X-Client-Id'] = this.clientId;
       }
 
-      const data = await response.json();
-      return data;
+      const response = await fetch(`${this.baseUrl}/auth/validate`, {
+        headers: validateHeaders,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data;
+      }
+
+      // Fallback to local JWKS verification if Core validate is unavailable
+      const local = await verifyJwtRS256(token, {
+        jwksBaseUrl: this.baseUrl,
+        issuer: 'dailey-core-auth',
+      })
+      if (local?.payload) {
+        const p = local.payload as any
+        const roles: string[] = Array.isArray(p.roles) ? p.roles : []
+        const user: DaileyCoreUser = {
+          id: String(p.sub),
+          email: String(p.email || ''),
+          name: typeof p.name === 'string' ? p.name : undefined,
+          roles,
+          email_verified: Boolean(p.email_verified ?? true),
+          status: 'active',
+          tenant_id: p.tenant,
+        }
+        return { valid: true, user, roles }
+      }
+      return null;
     } catch (error) {
       console.error('🎭 Token validation failed:', error);
       return null;
@@ -174,16 +223,20 @@ class DaileyCoreAuthClient {
    */
   async refreshToken(refreshToken: string): Promise<DaileyCoreAuthResponse | null> {
     try {
+      const refreshBody: Record<string, unknown> = {
+        refresh_token: refreshToken,
+      };
+      if (this.clientId) {
+        refreshBody.client_id = this.clientId;
+      }
+
       const response = await fetch(`${this.baseUrl}/auth/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'Castingly/2.0'
         },
-        body: JSON.stringify({
-          refresh_token: refreshToken,
-          client_id: this.clientId
-        })
+        body: JSON.stringify(refreshBody)
       });
 
       if (!response.ok) {
@@ -257,9 +310,8 @@ class DaileyCoreAuthClient {
                  `${coreUser.first_name || ''} ${coreUser.last_name || ''}`.trim() ||
                  coreUser.email.split('@')[0];
 
-    // Generate avatar URL
-    const avatar_url = coreUser.profile_image || 
-                      `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=9C27B0&color=fff`;
+    // Generate a web-safe avatar URL (avoid local file paths from Core)
+    const avatar_url = resolveWebAvatarUrl(coreUser.profile_image, name) || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=9C27B0&color=fff`
 
     return {
       id: coreUser.id,
@@ -282,6 +334,7 @@ class DaileyCoreAuthClient {
   private mapToCastinglyRole(coreRoles: string[]): 'actor' | 'agent' | 'casting_director' | 'admin' | 'investor' {
     const roles = coreRoles || [];
     // Priority order: admin > casting_director > agent > actor (default)
+    // Note: investor is not a primary role, it's a flag. Investors can be actors, agents, etc.
     if (roles.includes('admin') || roles.includes('tenant.admin') || roles.includes('core.admin')) {
       return 'admin';
     }
@@ -291,9 +344,8 @@ class DaileyCoreAuthClient {
     if (roles.includes('agent')) {
       return 'agent';
     }
-    if (roles.includes('investor') || roles.includes('vip_investor')) {
-      return 'investor';
-    }
+    // Don't return 'investor' as a role - it's a secondary attribute
+    // Investors should have their primary role (actor, agent, etc.)
     return 'actor'; // Default role
   }
 

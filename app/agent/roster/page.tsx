@@ -157,12 +157,14 @@ export default function AgentRosterPage() {
 function ActorPrimaryHeadshot({ actorId, fallback, name }: { actorId: string; fallback?: string | null; name: string }) {
   const [src, setSrc] = useState<string | null>(null)
   const loadedRef = useRef(false)
+  const { token } = useAuthStore()
   useEffect(() => {
     if (loadedRef.current) return
     loadedRef.current = true
     ;(async () => {
       try {
-        const res = await fetch(`/api/actors/${actorId}`)
+        const res = await fetch(`/api/actors/${actorId}`,
+          token ? { headers: { Authorization: `Bearer ${token}` } } : undefined as any)
         if (!res.ok) throw new Error('failed')
         const data = await res.json()
         const headshots = data?.media?.headshots || []

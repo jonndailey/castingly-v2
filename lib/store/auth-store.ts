@@ -67,42 +67,42 @@ interface PendingMfaChallenge {
   }
 }
 
-// Demo users for development with password
+// Demo users for development with password - Real accounts from database
 const DEMO_PASSWORDS: Record<string, string> = {
-  'danactor': 'dailey123',
-  'christineagent': 'dailey123',
-  'jonnydirector': 'dailey123',
-  'admin': 'admin123'
+  'jackfdfnnelly@gmail.com': 'demo123',
+  'super.agent@castingly.com': 'demo123',
+  'indie.casting@castingly.com': 'demo123',
+  'admin@dailey.cloud': 'demo123'
 }
 
 const DEMO_USERS: Record<string, User> = {
-  'danactor': {
+  'jackfdfnnelly@gmail.com': {
     id: '1',
-    email: 'danactor',
-    name: 'Dan Actor',
+    email: 'jackfdfnnelly@gmail.com',
+    name: 'Jack Connelly',
     role: 'actor',
-    avatar_url: 'https://ui-avatars.com/api/?name=Dan+Actor&background=9C27B0&color=fff',
+    avatar_url: 'https://ui-avatars.com/api/?name=Jack+Connelly&background=9C27B0&color=fff',
     email_verified: true
   },
-  'christineagent': {
+  'super.agent@castingly.com': {
     id: '2',
-    email: 'christineagent',
-    name: 'Christine Agent',
+    email: 'super.agent@castingly.com',
+    name: 'Super Agent',
     role: 'agent',
-    avatar_url: 'https://ui-avatars.com/api/?name=Christine+Agent&background=009688&color=fff',
+    avatar_url: 'https://ui-avatars.com/api/?name=Super+Agent&background=009688&color=fff',
     email_verified: true
   },
-  'jonnydirector': {
+  'indie.casting@castingly.com': {
     id: '3',
-    email: 'jonnydirector',
-    name: 'Jonny Director',
+    email: 'indie.casting@castingly.com',
+    name: 'Indie Casting Director',
     role: 'casting_director',
-    avatar_url: 'https://ui-avatars.com/api/?name=Jonny+Director&background=FF5722&color=fff',
+    avatar_url: 'https://ui-avatars.com/api/?name=Indie+Casting&background=FF5722&color=fff',
     email_verified: true
   },
-  'admin': {
+  'admin@dailey.cloud': {
     id: '4',
-    email: 'admin',
+    email: 'admin@dailey.cloud',
     name: 'Admin User',
     role: 'admin',
     avatar_url: 'https://ui-avatars.com/api/?name=Admin+User&background=DC2626&color=fff',
@@ -141,26 +141,28 @@ const useAuthStore = create<AuthState>()(
           console.log('🎭 API Response:', { status: response.status, source: data.source })
           
           if (!response.ok) {
-            // Try demo users if API fails
-            const demoUser = DEMO_USERS[email]
-            const demoPassword = DEMO_PASSWORDS[email]
-            
-            if (demoUser && demoPassword === password) {
-              console.log('🎭 Demo login successful:', email)
-              const token = 'demo-token-' + Date.now()
-              
-              set({ 
-                user: demoUser, 
-                token, 
-                refreshToken: null,
-                authSource: 'demo',
-                isLoading: false,
-                originalUser: demoUser
-              })
-              return;
+            // In production, do NOT allow demo fallback unless explicitly enabled
+            const enableDemoFallback = (process.env.NEXT_PUBLIC_ENABLE_DEMO_FALLBACK === 'true') || process.env.NODE_ENV !== 'production'
+
+            if (enableDemoFallback) {
+              const demoUser = DEMO_USERS[email]
+              const demoPassword = DEMO_PASSWORDS[email]
+              if (demoUser && demoPassword === password) {
+                console.log('🎭 Demo login successful:', email)
+                const token = 'demo-token-' + Date.now()
+                set({ 
+                  user: demoUser, 
+                  token, 
+                  refreshToken: null,
+                  authSource: 'demo',
+                  isLoading: false,
+                  originalUser: demoUser
+                })
+                return
+              }
             }
-            
-            // No demo user found, show API error
+
+            // No demo user or not permitted; surface API error
             set({ 
               error: data.error || 'Invalid username or password', 
               isLoading: false 

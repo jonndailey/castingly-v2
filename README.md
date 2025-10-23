@@ -45,7 +45,7 @@ Castingly v2 is **fully integrated** with the DAILEY CORE authentication system:
 ### Features
 - **RSA JWT Authentication**: Uses RS256 algorithm with DAILEY CORE as the authority
 - **Hybrid Authentication**: Supports DAILEY CORE, legacy accounts, and demo users
-- **Automatic Token Validation**: Real-time validation against DAILEY CORE `/auth/validate` endpoint
+- **JWT Validation Strategy**: Validates RS256 tokens via Core's JWKS (`/.well-known/jwks.json`) with optional `/auth/validate` check when available
 - **Token Refresh**: Automatic token refresh for seamless user experience
 - **Visual Status Indicators**: Authentication badges showing current auth source
 - **Role Mapping**: Maps DAILEY CORE roles to Castingly application roles
@@ -53,7 +53,7 @@ Castingly v2 is **fully integrated** with the DAILEY CORE authentication system:
 ### Authentication Flow
 1. **Login**: Users authenticate via API which tries DAILEY CORE first
 2. **Token Issuance**: DAILEY CORE issues RSA-signed JWT tokens
-3. **Validation**: Frontend validates tokens against DAILEY CORE
+3. **Validation**: Frontend validates tokens locally via JWKS; falls back to Core `/auth/validate` when available
 4. **Fallback**: System supports legacy and demo accounts for development
 5. **Status Display**: UI shows authentication source with color-coded badges
 
@@ -307,6 +307,260 @@ View our comprehensive [Beta Release Roadmap](./BETA_RELEASE_ROADMAP.md) for det
 - **CloudFront** CDN for global distribution
 - **CI/CD pipeline** with GitHub Actions
 - **Monitoring** and alerting systems
+
+## 🚀 Production Runbook
+
+This app is stateless in production (auth via Dailey Core, media via DMAPI). Recommended: Nginx in front, PM2 for the Node process on Linode.
+
+1) Environment setup
+- Create `.env.production` (or export env vars) using `.env.example` as a reference.
+- Set:
+  - `NEXT_PUBLIC_DAILEY_CORE_AUTH_URL=https://core.dailey.cloud`
+  - `NEXT_PUBLIC_DMAPI_BASE_URL=https://media.dailey.cloud`
+  - Toggle `NEXT_PUBLIC_ENABLE_INVESTOR_DEMO=true` only on investor demo environments.
+
+2) Build and start with PM2
+```bash
+npm ci
+npm run build
+pm2 start ecosystem.production.cjs --env production
+pm2 save
+```
+
+3) Nginx
+- Proxy `server_name castingly.dailey.cloud` to `127.0.0.1:3000`.
+- Add no‑cache headers for `index.html` to avoid stale SPA after deploys.
+
+## 🔧 Dev Server Status (Quick Reference)
+
+Environment: ssh dev
+
+- App process
+  - PM2 name: `castingly-v2`
+  - Port: `3003`
+  - Directory: `~/apps/castingly-v2`
+  - Restart: `pm2 restart castingly-v2 --update-env`
+
+- Apache vhosts (HTTPS → app)
+  - `/etc/apache2/sites-enabled/castingly.conf` → `ProxyPass / http://127.0.0.1:3003/`
+  - `/etc/apache2/sites-enabled/castingly-ssl.conf` → `ProxyPass / http://127.0.0.1:3003/`
+  - Reload: `sudo systemctl reload apache2`
+
+- DB (cluster) via SSH tunnel
+  - Local forward on dev: `127.0.0.1:3307 -> coredb1:127.0.0.1:3306`
+  - Check: `lsof -iTCP:3307 -sTCP:LISTEN`
+  - Start script: `~/.local/bin/start_castingly_tunnel.sh`
+  - Autostart: `@reboot /home/jonny/.local/bin/start_castingly_tunnel.sh` (crontab)
+
+- App DB env (in `~/apps/castingly-v2/.env.production`)
+  - `DB_HOST=127.0.0.1`
+  - `DB_PORT=3307`
+  - `DB_NAME=castingly`
+  - `DB_USER=castingly_app`
+  - `DB_PASSWORD=<stored in ~/.secrets/castingly_db_password>`
+
+- Core/DMAPI env (in `.env.production`)
+  - `NEXT_PUBLIC_DAILEY_CORE_AUTH_URL=https://core.dailey.cloud`
+  - `DAILEY_CORE_AUTH_URL=https://core.dailey.cloud`
+  - `DAILEY_CORE_APP_SLUG=castingly-portal`
+  - `DAILEY_CORE_TENANT_SLUG=castingly`
+  - `NEXT_PUBLIC_DMAPI_BASE_URL=https://media.dailey.cloud`
+  - Do NOT set `DAILEY_CORE_CLIENT_ID` (omitted header avoids “Invalid application”)
+
+## 🧪 Demo Accounts (Core → Castingly tenant)
+
+These users exist in `dailey_core_auth.users` and are joined to the `castingly` tenant. Use for demos/tests.
+
+- Investor: `investor.demo@castingly.com` / `Inv3stor!2025`
+- Actor: `actor.demo@castingly.com` / `Act0r!2025`
+- Agent: `agent.demo@castingly.com` / `Ag3nt!2025`
+- Casting Director: `director.demo@castingly.com` / `D1rect0r!2025`
+- Admin: `admin.demo@castingly.com` / `Adm1n!2025`
+
+Core auth test (should return a token):
+
+```bash
+curl -sS -X POST https://core.dailey.cloud/auth/login \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"email":"actor.demo@castingly.com","password":"Act0r!2025","app_slug":"castingly-portal"}'
+```
+
+## 🐞 Core Auth Login Issue (Tracking)
+
+Symptom
+- UI POST `https://castingly.dailey.dev/api/auth/login` returns 401 with “Invalid email or password”.
+- Server logs show `Dailey Core auth failed … Invalid application`.
+
+Known Good
+- Direct Core call (above) returns an `access_token` using `app_slug=castingly-portal`.
+
+Current Hypothesis
+- A header/body mismatch to Core causes rejection when called from the server. We removed `X-Client-Id` and send only `Content-Type` and optional `X-Tenant-Slug`. Ensure the server is using the latest build and env.
+
+What to Verify
+1) Env in `~/apps/castingly-v2/.env.production`:
+   - `DAILEY_CORE_AUTH_URL=https://core.dailey.cloud`
+   - `DAILEY_CORE_APP_SLUG=castingly-portal`
+   - `DAILEY_CORE_TENANT_SLUG=castingly`
+   - (no `DAILEY_CORE_CLIENT_ID`)
+2) Rebuild + restart:
+   - `npm run build && pm2 restart castingly-v2 --update-env`
+3) Tail server logs during a login:
+   - `pm2 logs castingly-v2 --lines 200`
+  - Expect to see log line with: `Attempting login for … (baseUrl=https://core.dailey.cloud, appSlug=castingly-portal, tenant=castingly, clientId=n/a)`
+
+If still failing
+- Add diagnostic: temporarily log Core response `{status, data}` and the outbound payload headers (password redacted). Compare against working curl.
+- Token validation uses JWKS locally; `/auth/validate` errors do not block login. Investigate Core logs for `/auth/validate` if needed.
+- As a temporary demo fallback, set `ENABLE_LEGACY_AUTH_FALLBACK=true` in `.env.production` to allow legacy auth while Core headers are tuned.
+
+## 📘 Definitive Integration: Core + DMAPI + DB
+
+- Core auth (recommended pattern)
+  - Use app and tenant slugs, not a client id
+  - POST `/auth/login` body: `{ email, password, app_slug, tenant_slug }`
+  - Optionally send `X-Client-Id: <app_slug>` and `X-Tenant-Slug: <tenant_slug>`
+  - Token validation: verify RS256 JWTs against Core JWKS at `/.well-known/jwks.json`; use `/auth/validate` only as a best‑effort check
+  - Reference: `../dailey-core/INTEGRATION_GUIDE.md` (Critical Update section)
+
+- DMAPI integration
+  - Accepts Bearer tokens issued by Core and verifies locally via JWKS
+  - Optional best‑effort call to Core `/auth/validate` when available
+  - Reference: `../dailey-media-api/docs/DEPLOYMENT_CORE_INTEGRATION.md` (Token Validation Strategy)
+  - Production env (server):
+    - `DMAPI_BASE_URL=https://media.dailey.cloud`
+    - `DMAPI_SERVICE_EMAIL` / `DMAPI_SERVICE_PASSWORD` (required for server reads/uploads)
+    - Optional: `DMAPI_LIST_USER_ID=<service_subject_id>` to scope bucket folder listings for profile headshots
+  - Private files (resumes): served via app proxy `GET /api/media/proxy?bucket=castingly-private&userId=<svcUser>&path=actors/<actorId>/resumes&name=<file>` so the UI never reveals DMAPI credentials.
+
+- MySQL cluster access
+  - Use an SSH tunnel locally: listen on `127.0.0.1:3307`, connect to cluster primary/HA
+  - App env: `DB_HOST=127.0.0.1`, `DB_PORT=3307`, `DB_USER/DB_PASSWORD/DB_NAME` per app
+  - Quick test: `mysql -h127.0.0.1 -P3307 -u <user> -p -e 'SELECT 1' <db>`
+  - Reference: `../dailey-core/docs/MYSQL_CORE_DMAPI_CONNECTION_GUIDE.md`
+
+Notes on legacy profile reads
+- The profile API reads legacy tables. When a Core UUID reaches `/api/actors/:id`, the API now falls back to map via email from the bearer token to the legacy numeric id before loading the profile.
+
+## 🛠️ Current Integration Status (Oct 2025)
+
+- Core login: working end-to-end (slug-based, RS256+JWKS).
+- Actor profile API: returns 200 for authenticated users (builds a minimal profile when legacy row is missing). Public headshots are listed from DMAPI buckets; private resumes stream via `/api/media/proxy`.
+- Forum activity: uses new schema fields (`name`, `avatar_url`). Endpoint requires authentication.
+- DMAPI audience: temporarily permissive (accepts any Core audience). Plan: set `CORE_AUDIENCE=<Castingly app_id>` and remove `ALLOW_CORE_ANY_AUD`.
+- DMAPI DB: uploads succeed to storage; a small DB patch (ensure application row exists) removes occasional FK insert failures and populates `/api/files` immediately.
+
+## 🔒 Production Checklist (Castingly server)
+
+- Core
+  - `DAILEY_CORE_AUTH_URL=https://core.dailey.cloud`
+  - `DAILEY_CORE_APP_SLUG=castingly-portal`
+  - `DAILEY_CORE_TENANT_SLUG=castingly`
+  - Do not set `DAILEY_CORE_CLIENT_ID` unless you have a provisioned value.
+- DMAPI
+  - `DMAPI_BASE_URL=https://media.dailey.cloud`
+  - `DMAPI_SERVICE_EMAIL=dmapi-service@castingly.com`
+  - `DMAPI_SERVICE_PASSWORD=******`
+  - Optional: `DMAPI_LIST_USER_ID=<service_subject_id>` for bucket-scoped folder listings
+- DB (cluster via tunnel)
+  - `DB_HOST=127.0.0.1`
+  - `DB_PORT=3307`
+  - `DB_USER/DB_PASSWORD/DB_NAME` as provisioned
+
+## 🧯 Troubleshooting (common)
+
+- 404 on `/api/actors/:id` after successful login
+  - Cause: UI request missing Authorization header; server can’t map Core UUID.
+  - Fix: pass `Authorization: Bearer <token>` on all actor fetches (talent pages updated).
+- 500 on forum endpoints
+  - Cause: queries referenced legacy columns (`first_name`, `profile_image`).
+  - Fix: updated to `name`, `avatar_url`. Require authentication on `/api/forum/activity/:userId`.
+- Private resume not rendering
+  - Use `/api/media/proxy` to stream from DMAPI with the server’s service token.
+
+## 🔜 DMAPI Hardening (next)
+
+- Set `CORE_AUDIENCE=<Castingly Core app_id>` on DMAPI and remove `ALLOW_CORE_ANY_AUD=true`.
+- Add `ensureApplication('castingly')` before `media_files` inserts to avoid FK failures; keep `ensureUser` as-is.
+- Keep Castingly proxy for private files; use DMAPI direct serve URLs for public headshots.
+
+## 🔍 Quick Checks
+
+App health
+```bash
+pm2 status castingly-v2
+curl -sS http://127.0.0.1:3003/api/admin/system/health | jq
+```
+
+DB tunnel
+```bash
+lsof -iTCP:3307 -sTCP:LISTEN
+mysql -h127.0.0.1 -P3307 -ucastingly_app -p -e 'SELECT 1' castingly
+```
+
+Apache → app
+```bash
+curl -I https://castingly.dailey.dev/
+```
+
+## 🧯 Troubleshooting: Profile 500 on /api/actors/:id
+
+Symptoms
+- Browser console shows 500 errors for `/api/actors/<uuid>` after a successful login.
+
+Likely causes
+- Database connectivity mismatch. The API routes use the legacy Castingly DB via MySQL. In production, access is through an SSH tunnel on `127.0.0.1:3307`, but `.env.production` may be pointing to the cluster IP/port directly.
+- Schema mismatch. Production DB uses `users` + `profiles` + `media` (no `actors` or `actor_media`). The server has been aligned to this schema.
+
+Fix
+- Set DB env to the tunnel and restart:
+  - `DB_HOST=127.0.0.1`
+  - `DB_PORT=3307`
+  - `DB_USER/DB_PASSWORD/DB_NAME` as provisioned
+  - `pm2 restart castingly-v2 --update-env`
+- Verify tunnel and DB:
+  - `lsof -iTCP:3307 -sTCP:LISTEN`
+  - `mysql -h127.0.0.1 -P3307 -ucastingly_app -p -e 'SELECT 1' castingly`
+- Health endpoint:
+  - `curl -sS http://127.0.0.1:3003/api/admin/system/health | jq`
+
+Notes
+- This endpoint reads from the legacy schema (`lib/db_existing.ts`). Production schema is `users` + `profiles` + `media`; the code has been updated accordingly.
+- If you pass a Core UUID that doesn’t exist in `users`, the API now falls back to a minimal Core‑derived profile so the page renders (200). For a complete profile, add a `users` row (char(36) id) and an associated `profiles` row, or run the migration.
+- For details on the standard DB access pattern, see `../dailey-core/docs/MYSQL_CORE_DMAPI_CONNECTION_GUIDE.md`.
+
+
+### User Migration to Dailey Core
+
+Use the tools in `~/apps/dailey-core` to import legacy users so they benefit from Core’s replication:
+1. Copy `scripts/migrate-logins.config.example.json` to `scripts/migrate-logins.config.json` and point the source to `casting_portal.users`.
+   - `target.defaultTenantId`: `22222222-2222-2222-2222-222222222222`
+   - `target.defaultAppId`: `66666666-6666-6666-6666-666666666666`
+   - Map `email`, `first_name`, `last_name`, `password_hash` (sha256 → generally requires reset), timestamps.
+2. Run:
+```bash
+cd ~/apps/dailey-core
+node scripts/migrate-logins.js --config=./scripts/migrate-logins.config.json --dry-run
+node scripts/migrate-logins.js --config=./scripts/migrate-logins.config.json
+```
+
+### Media Migration to DMAPI
+
+Run from this repo to move all media to production DMAPI:
+```bash
+export DMAPI_BASE_URL=https://media.dailey.cloud
+export DAILEY_CORE_AUTH_URL=https://core.dailey.cloud
+export DMAPI_SERVICE_EMAIL=dmapi-service@castingly.com
+export DMAPI_SERVICE_PASSWORD=castingly_dmapi_service_2025
+
+# Dry run
+node scripts/migrate-media-to-dmapi.mjs --dry-run
+
+# Live run
+DMAPI_MIGRATION_DELAY_MS=200 node scripts/migrate-media-to-dmapi.mjs
+```
+
+The script ensures the DMAPI application and user references exist, uploads files, and enriches metadata for Castingly.
 
 ## 🤝 Contributing
 

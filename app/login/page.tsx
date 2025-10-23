@@ -15,6 +15,9 @@ export default function LoginPage() {
   
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [devUsers, setDevUsers] = useState<Array<{ id: string; name: string; email: string; avatar_url: string; role: string }>>([])
+  const [showDevUsers, setShowDevUsers] = useState(false)
+  const [devLoading, setDevLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
   const [mfaCode, setMfaCode] = useState('')
@@ -32,6 +35,26 @@ export default function LoginPage() {
     }
   }, [pendingMfa, clearError])
 
+  // Load quick test users (development only)
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return
+    let cancelled = false
+    ;(async () => {
+      try {
+        setDevLoading(true)
+        const res = await fetch('/api/dev/test-users')
+        if (!res.ok) return
+        const data = await res.json()
+        if (!cancelled) setDevUsers(data.users || [])
+      } finally {
+        setDevLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const routeToDashboard = () => {
     const { user } = useAuthStore.getState()
     if (user) {
@@ -40,6 +63,9 @@ export default function LoginPage() {
         dashboardPath = '/casting/dashboard'
       } else if (user.role === 'admin') {
         dashboardPath = '/admin'
+      } else if (user.role === 'investor') {
+        // Investors should go to actor dashboard for now
+        dashboardPath = '/actor/dashboard'
       } else {
         dashboardPath = `/${user.role}/dashboard`
       }
@@ -74,6 +100,31 @@ export default function LoginPage() {
       routeToDashboard()
     } catch (err) {
       // Error is handled by the store
+    }
+  }
+
+  const handleDevImpersonate = async (userEmail: string) => {
+    try {
+      const res = await fetch('/api/auth/dev/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail })
+      })
+      if (!res.ok) return
+      // trigger route based on updated store after auth-store consumes response
+      const data = await res.json()
+      useAuthStore.setState({
+        user: data.user,
+        token: data.token,
+        refreshToken: null,
+        authSource: 'demo',
+        originalUser: data.user,
+        isLoading: false,
+        error: null,
+      })
+      routeToDashboard()
+    } catch (e) {
+      // ignore for dev tool
     }
   }
 
@@ -117,10 +168,10 @@ export default function LoginPage() {
   // Demo login function
   const demoLogin = async (role: 'actor' | 'agent' | 'casting_director' | 'admin') => {
     const demoAccounts = {
-      actor: { email: 'danactor', password: 'dailey123' },
-      agent: { email: 'christineagent', password: 'dailey123' },
-      casting_director: { email: 'jonnydirector', password: 'dailey123' },
-      admin: { email: 'admin', password: 'admin123' }
+      actor: { email: 'jackfdfnnelly@gmail.com', password: 'demo123' },
+      agent: { email: 'super.agent@castingly.com', password: 'demo123' },
+      casting_director: { email: 'indie.casting@castingly.com', password: 'demo123' },
+      admin: { email: 'admin@dailey.cloud', password: 'demo123' }
     }
     
     const account = demoAccounts[role]
@@ -244,6 +295,59 @@ export default function LoginPage() {
             </motion.div>
           ) : (
             <>
+              {/* Quick Test Users (Development only) */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-gray-700">Quick Test Users (Real Accounts)</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowDevUsers((v) => !v)}
+                      className="text-xs text-primary-600 hover:text-primary-700"
+                    >
+                      {showDevUsers ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  {showDevUsers && (
+                    <div className="border border-gray-200 rounded-lg p-2 max-h-72 overflow-y-auto bg-white">
+                      {devLoading && (
+                        <div className="text-xs text-gray-500 p-2">Loading users…</div>
+                      )}
+                      {!devLoading && devUsers.length === 0 && (
+                        <div className="text-xs text-gray-500 p-2">No users found</div>
+                      )}
+                      <div className="grid grid-cols-1 gap-1">
+                        {devUsers.map((u) => (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => {
+                              setEmail(u.email)
+                              setPassword('demo123')
+                              // Optionally impersonate directly
+                              handleDevImpersonate(u.email)
+                            }}
+                            className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 text-left"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={u.avatar_url}
+                              alt={u.name}
+                              className="w-8 h-8 rounded-full object-cover border border-gray-200"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{u.name}</p>
+                              <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                            </div>
+                            <span className="text-[10px] text-gray-400 uppercase">{u.role}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <form id="login-form" onSubmit={handleSubmit} className="space-y-6" noValidate>
                 <Input
                   type="text"
@@ -252,7 +356,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   error={validationErrors.email}
                   icon={<User className="w-4 h-4" />}
-                  placeholder="e.g., danactor"
+                  placeholder="e.g., jackfdfnnelly@gmail.com"
                   autoComplete="username"
                   required={false}
                 />
@@ -316,18 +420,20 @@ export default function LoginPage() {
                 </Button>
               </form>
 
-              {/* Demo accounts */}
-              <div className="mt-8 pt-8 border-t border-gray-200">
-                <p className="text-center text-sm text-gray-600 mb-4">
-                  Try a demo account
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button onClick={() => demoLogin('actor')} variant="outline" size="sm">Actor</Button>
-                  <Button onClick={() => demoLogin('agent')} variant="outline" size="sm">Agent</Button>
-                  <Button onClick={() => demoLogin('casting_director')} variant="outline" size="sm">Casting Director</Button>
-                  <Button onClick={() => demoLogin('admin')} variant="outline" size="sm" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100">🛡️ Admin</Button>
+              {/* Demo accounts (explicitly gated for investor demos) */}
+              {process.env.NEXT_PUBLIC_ENABLE_INVESTOR_DEMO === 'true' && (
+                <div className="mt-8 pt-8 border-t border-gray-200">
+                  <p className="text-center text-sm text-gray-600 mb-4">
+                    Try a demo account
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button onClick={() => demoLogin('actor')} variant="outline" size="sm">Actor</Button>
+                    <Button onClick={() => demoLogin('agent')} variant="outline" size="sm">Agent</Button>
+                    <Button onClick={() => demoLogin('casting_director')} variant="outline" size="sm">Casting Director</Button>
+                    <Button onClick={() => demoLogin('admin')} variant="outline" size="sm" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100">🛡️ Admin</Button>
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           )}
 
