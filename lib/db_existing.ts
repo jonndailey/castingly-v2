@@ -224,6 +224,21 @@ export const profiles = {
       age_range: string
     }>
   ) {
+    // Determine which columns exist in profiles table to avoid unknown column errors on mixed schemas
+    let profileColumns = new Set<string>()
+    try {
+      const dbNameRows = (await query('SELECT DATABASE() as db')) as Array<{ db: string }>
+      const dbName = dbNameRows?.[0]?.db || undefined
+      const cols = (await query(
+        dbName
+          ? 'SELECT COLUMN_NAME as name FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = \"profiles\"'
+          : 'SELECT COLUMN_NAME as name FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = \"profiles\"',
+        dbName ? [dbName] : undefined as any
+      )) as Array<{ name: string }>
+      profileColumns = new Set((cols || []).map((c) => c.name))
+    } catch {
+      // If this fails, proceed; we'll still update safe/default columns
+    }
     function normalizeAvatarUrl(value: unknown): string | null {
       if (!value || typeof value !== 'string') return null
       const input = value.trim()
@@ -288,15 +303,15 @@ export const profiles = {
     const profileFields: string[] = []
     const profileValues: any[] = []
 
-    if (data.location !== undefined) {
+    if (data.location !== undefined && profileColumns.has('location')) {
       profileFields.push('location = ?')
       profileValues.push(data.location)
     }
-    if (data.bio !== undefined) {
+    if (data.bio !== undefined && profileColumns.has('bio')) {
       profileFields.push('bio = ?')
       profileValues.push(data.bio)
     }
-    if (data.skills !== undefined) {
+    if (data.skills !== undefined && profileColumns.has('skills')) {
       // Cast to JSON array when provided as CSV string
       const skillsVal = Array.isArray(data.skills)
         ? JSON.stringify(data.skills)
@@ -304,35 +319,35 @@ export const profiles = {
       profileFields.push('skills = ?')
       profileValues.push(skillsVal)
     }
-    if (data.height !== undefined) {
+    if (data.height !== undefined && profileColumns.has('height')) {
       profileFields.push('height = ?')
       profileValues.push(data.height)
     }
-    if (data.eye_color !== undefined) {
+    if (data.eye_color !== undefined && profileColumns.has('eye_color')) {
       profileFields.push('eye_color = ?')
       profileValues.push(data.eye_color)
     }
-    if (data.hair_color !== undefined) {
+    if (data.hair_color !== undefined && profileColumns.has('hair_color')) {
       profileFields.push('hair_color = ?')
       profileValues.push(data.hair_color)
     }
-    if (data.resume_url !== undefined) {
+    if (data.resume_url !== undefined && profileColumns.has('resume_url')) {
       profileFields.push('resume_url = ?')
       profileValues.push(data.resume_url)
     }
-    if (data.instagram !== undefined) {
+    if (data.instagram !== undefined && profileColumns.has('instagram')) {
       profileFields.push('instagram = ?')
       profileValues.push(data.instagram)
     }
-    if (data.twitter !== undefined) {
+    if (data.twitter !== undefined && profileColumns.has('twitter')) {
       profileFields.push('twitter = ?')
       profileValues.push(data.twitter)
     }
-    if (data.website !== undefined) {
+    if (data.website !== undefined && profileColumns.has('website')) {
       profileFields.push('website = ?')
       profileValues.push(data.website)
     }
-    if (data.age_range !== undefined) {
+    if (data.age_range !== undefined && profileColumns.has('age_range')) {
       profileFields.push('age_range = ?')
       profileValues.push(data.age_range)
     }

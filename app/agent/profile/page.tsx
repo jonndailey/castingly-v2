@@ -140,6 +140,23 @@ export default function AgentProfile() {
   
   const renderOverview = () => (
     <div className="space-y-6">
+      {/* Inside Connect (Agent) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Inside Connect</span>
+            <Badge variant="secondary">New</Badge>
+          </CardTitle>
+          <CardDescription>Manage open calls and review submissions</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+          <div className="text-sm text-gray-700">Post representation listings and review actor pitches in one place.</div>
+          <div className="flex gap-2">
+            <Button onClick={() => router.push('/agent/connect/listings')}>Manage Listings</Button>
+            <Button variant="outline" onClick={() => router.push('/agent/connect')}>View Inbox</Button>
+          </div>
+        </CardContent>
+      </Card>
       {/* Profile Header */}
       <Card>
         <CardContent className="p-6">

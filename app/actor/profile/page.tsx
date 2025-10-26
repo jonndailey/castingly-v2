@@ -226,6 +226,8 @@ export default function ActorProfile() {
       }
       setUploadMessage('Uploaded successfully')
       setTimeout(() => setUploadMessage(''), 2500)
+      // Refresh client media immediately to reflect new headshot and update counters
+      try { reloadMedia() } catch {}
       router.refresh()
     } catch (err: any) {
       setUploadMessage(err?.message || 'Upload failed')
@@ -409,6 +411,22 @@ export default function ActorProfile() {
       />
       
       <PageContent>
+        {/* Inside Connect entry */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Inside Connect</span>
+              <Badge variant="secondary">New</Badge>
+            </CardTitle>
+            <CardDescription>Find agencies accepting new talent and pitch yourself</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+            <p className="text-sm text-gray-700">Browse open representation calls and track your submissions.</p>
+            <div className="flex gap-2">
+              <Button onClick={() => router.push('/actor/connect')}>Open Inside Connect</Button>
+            </div>
+          </CardContent>
+        </Card>
         {/* Profile Completion */}
         {profileCompletion < 100 && (
           <motion.div
@@ -449,11 +467,8 @@ export default function ActorProfile() {
                 <div className="flex flex-col items-center">
                   <Avatar
                     src={
-                      (
-                        primaryHeadshot
-                          ? getMediaUrl(primaryHeadshot)
-                          : user?.avatar_url
-                      ) ?? undefined
+                      actorData?.avatar_url ||
+                      `/api/media/avatar/${encodeURIComponent(String(user?.id || ''))}`
                     }
                     alt={actorData?.name || ''}
                     fallback={actorData?.name || ''}

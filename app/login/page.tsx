@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { User, Lock, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, ArrowRight, ShieldCheck, Clapperboard, Sparkles, Smartphone, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import useAuthStore from '@/lib/store/auth-store'
@@ -199,14 +199,12 @@ export default function LoginPage() {
           <div className="text-center mb-8">
             <Link href="/">
               <div className="flex items-center justify-center gap-3 mb-2">
-                <img src="/favicon-32x32.png" alt="DAILEY CORE" className="w-8 h-8" />
                 <h1 className="text-4xl font-heading font-bold gradient-text">
                   Castingly
                 </h1>
               </div>
             </Link>
             <p className="mt-2 text-gray-600">Welcome back</p>
-            <p className="text-xs text-gray-500 mt-1">Powered by DAILEY CORE</p>
           </div>
           
           {isMfaStep ? (
@@ -464,11 +462,11 @@ export default function LoginPage() {
                 Connect with talent, streamline auditions, and cast your next project with ease.
               </p>
               
-              {/* Feature highlights */}
+              {/* Feature highlights (icons via lucide-react; no emoji) */}
               <div className="grid grid-cols-2 gap-6 text-left max-w-md mx-auto">
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <span>🎬</span>
+                    <Clapperboard className="w-4 h-4 text-white/90" />
                   </div>
                   <div>
                     <h3 className="font-semibold mb-1">Video Reviews</h3>
@@ -477,7 +475,7 @@ export default function LoginPage() {
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <span>🎭</span>
+                    <Sparkles className="w-4 h-4 text-white/90" />
                   </div>
                   <div>
                     <h3 className="font-semibold mb-1">Smart Matching</h3>
@@ -486,7 +484,7 @@ export default function LoginPage() {
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <span>📱</span>
+                    <Smartphone className="w-4 h-4 text-white/90" />
                   </div>
                   <div>
                     <h3 className="font-semibold mb-1">Mobile First</h3>
@@ -495,7 +493,7 @@ export default function LoginPage() {
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <span>🔒</span>
+                    <Shield className="w-4 h-4 text-white/90" />
                   </div>
                   <div>
                     <h3 className="font-semibold mb-1">Secure</h3>

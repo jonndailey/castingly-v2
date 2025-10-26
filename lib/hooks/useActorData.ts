@@ -51,6 +51,10 @@ export interface ActorProfile {
   }
 }
 
+// Simple in-memory cache to avoid spinners on quick navigations
+const profileCache = new Map<string, { data: ActorProfile; ts: number }>()
+const PROFILE_CACHE_TTL = 5_000 // 5s for more immediate UI feedback
+
 export function useActorProfile(actorId?: string, options?: { includeMedia?: boolean }) {
   const { user, token } = useAuthStore()
   const [profile, setProfile] = useState<ActorProfile | null>(null)
@@ -60,12 +64,22 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        setLoading(true)
         const id = actorId || user?.id
 
         if (!id) {
           setError('No actor ID provided')
           return
+        }
+
+        // Use cached value immediately if fresh
+        const cacheKey = `${id}|m=${options?.includeMedia ? '1' : '0'}`
+        const cached = profileCache.get(cacheKey)
+        const now = Date.now()
+        if (cached && now - cached.ts < PROFILE_CACHE_TTL) {
+          setProfile(cached.data)
+          setLoading(false)
+        } else {
+          setLoading(true)
         }
 
         const qs = new URLSearchParams()
@@ -84,6 +98,7 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
 
         const data = await response.json()
         setProfile(data)
+        profileCache.set(cacheKey, { data, ts: Date.now() })
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to load profile'
@@ -94,7 +109,7 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
     }
 
     fetchProfile()
-  }, [actorId, token, user?.id])
+  }, [actorId, token, user?.id, options?.includeMedia])
 
   return { profile, loading, error }
 }

@@ -46,6 +46,11 @@ const actorNavItems: NavItem[] = [
     icon: <Search className="w-5 h-5" />,
   },
   {
+    label: 'Connect',
+    href: '/actor/connect',
+    icon: <Users className="w-5 h-5" />,
+  },
+  {
     label: 'Forum',
     href: '/forum',
     icon: <MessageSquare className="w-5 h-5" />,
@@ -72,6 +77,11 @@ const agentNavItems: NavItem[] = [
     label: 'Roster',
     href: '/agent/roster',
     icon: <Users className="w-5 h-5" />,
+  },
+  {
+    label: 'Connect',
+    href: '/agent/connect',
+    icon: <Briefcase className="w-5 h-5" />,
   },
   {
     label: 'Submit',
@@ -264,31 +274,7 @@ export const SideNav: React.FC = () => {
             <h1 className="text-2xl font-heading font-bold gradient-text">Castingly</h1>
           </div>
           
-          {/* Authentication status badge */}
-          {user && (
-            <div className="mt-4 px-4">
-              <div className={cn(
-                "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all",
-                authSource === 'dailey-core' 
-                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                  : authSource === 'legacy'
-                  ? "bg-blue-50 text-blue-700 border border-blue-200"
-                  : "bg-amber-50 text-amber-700 border border-amber-200"
-              )}>
-                <div
-                  className={cn(
-                    "w-2 h-2 rounded-full animate-pulse",
-                    authSource === 'dailey-core' ? "bg-emerald-500" : authSource === 'legacy' ? "bg-blue-500" : "bg-amber-500"
-                  )}
-                />
-                <span className="text-xs">
-                  {authSource === 'dailey-core' && 'Authenticated through DAILEY CORE'}
-                  {authSource === 'legacy' && 'Legacy Auth'}
-                  {authSource === 'demo' && 'Demo Mode'}
-                </span>
-              </div>
-            </div>
-          )}
+          {/* (moved) authentication indicator shown near logout */}
           
           {/* Dev mode role switcher */}
           {devMode && (
@@ -400,16 +386,39 @@ export const SideNav: React.FC = () => {
                   <p className="text-xs text-gray-500">{user.role.replace('_', ' ')}</p>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  logout()
-                  window.location.href = '/login'
-                }}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Logout"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                {authSource && (
+                  <span
+                    className={cn(
+                      'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium border',
+                      authSource === 'dailey-core'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : authSource === 'legacy'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    )}
+                    title={
+                      authSource === 'dailey-core'
+                        ? 'Authenticated through DAILEY CORE'
+                        : authSource === 'legacy'
+                        ? 'Legacy Auth'
+                        : 'Demo Mode'
+                    }
+                  >
+                    {authSource === 'dailey-core' ? 'DAILEY CORE' : authSource === 'legacy' ? 'LEGACY' : 'DEMO'}
+                  </span>
+                )}
+                <button
+                  onClick={() => {
+                    logout()
+                    window.location.href = '/login'
+                  }}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Logout"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>

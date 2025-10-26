@@ -113,12 +113,10 @@ castingly-v2/
 
 ## 🔐 Authentication
 
-### Demo Accounts
-| Role | Username | Password |
-|------|----------|----------|
-| Actor | `danactor` | `dailey123` |
-| Agent | `christineagent` | `dailey123` |
-| Casting Director | `jonnydirector` | `dailey123` |
+### Login UI updates
+- Login page uses lucide-react icons (no emojis)
+- Removed broken Dailey Core logo and “Powered by Dailey Core” line
+- Small auth source pill in sidebar near Logout (desktop)
 
 ### Session Management
 - Uses Zustand with localStorage persistence
@@ -143,8 +141,27 @@ castingly-v2/
 ### Specialized Components
 - **VideoReview**: Swipe-based video review for casting directors
 - **VideoUpload**: Drag-and-drop or link video uploads
-- **BottomNav**: Mobile navigation bar (active underline removed; highlight state only)
-- **SideNav**: Desktop sidebar navigation
+- **BottomNav**: Mobile navigation bar (active underline removed; highlight only)
+- **SideNav**: Desktop sidebar navigation (auth pill near Logout)
+- **Inside Connect**: Actor discover (`/actor/connect`), Agent inbox (`/agent/connect`), Agent listings (`/agent/connect/listings`)
+
+## 🧭 Inside Connect
+
+### API
+- `GET/POST /api/connect/listings`, `GET/PATCH /api/connect/listings/:id`
+- `GET/POST /api/connect/submissions`, `PATCH /api/connect/submissions/:id`
+- `GET/PUT /api/connect/agency` (agent), `PUT /api/connect/prefs` (actor)
+
+### Database
+- `database/migrations/20251026_inside_connect.sql`
+- Index fixes: `database/migrations/20251026_inside_connect_fix_indexes.sql`
+
+### Seeding
+- `scripts/seed-inside-connect.sql` (base), `scripts/seed-inside-connect-more.sql` (more listings)
+- `scripts/seed-inside-connect-submissions-simple.sql` (sample inbox)
+
+### Migration helper
+- `scripts/apply-inside-connect.mjs` reads `.env` and applies schema idempotently
 
 ## 🚀 Features
 

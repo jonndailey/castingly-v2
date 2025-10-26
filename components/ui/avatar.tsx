@@ -189,13 +189,14 @@ const ProfileAvatar: React.FC<ProfileAvatarProps> = ({
       
       {editable && (
         <>
+          {/* Camera button positioned just outside the avatar for better presentation */}
           <button
             onClick={handleClick}
-            className="absolute bottom-1 right-1 sm:bottom-0 sm:right-0 rounded-full bg-primary-600 p-1.5 sm:p-2 text-white shadow-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+            className="absolute -bottom-1.5 -right-1.5 rounded-full bg-white text-primary-600 border border-gray-300 p-0.5 sm:p-1 shadow-none hover:bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 focus:ring-offset-0 dark:bg-gray-900 dark:border-gray-700 dark:text-primary-400"
             aria-label="Change avatar"
           >
             <svg
-              className="h-3 w-3 sm:h-4 sm:w-4"
+              className="h-[12px] w-[12px] sm:h-[14px] sm:w-[14px]"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"

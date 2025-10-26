@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { actors } from '@/lib/db_existing'
+import { isNonProduction } from '@/lib/env'
 
 export async function GET(_req: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') {
+    if (!isNonProduction()) {
       return NextResponse.json({ error: 'Not available in production' }, { status: 403 })
     }
 

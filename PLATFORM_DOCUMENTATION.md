@@ -244,6 +244,9 @@ Castingly v2 is a comprehensive casting management platform built with Next.js 1
 - Portal-specific navigation menus
 - Breadcrumb navigation for deep pages
 - Quick action buttons for common workflows
+- Inside Connect entries
+  - Actor: Connect appears in sidebar; Inside Connect card on profile
+  - Agent: Connect (Inbox + Manage Listings) appears in sidebar and on profile
 
 ## Responsive Design
 
@@ -268,6 +271,7 @@ Castingly v2 is a comprehensive casting management platform built with Next.js 1
 ### Media & Performance
 - `/api/media/proxy` issues 302 redirects to signed/serve URLs with variant-insensitive matching
 - Short DMAPI timeouts to avoid stalls; longer cache for proxy and avatar redirects
+- Profile media upload: immediate client refresh of media state to update counters and thumbnails
 
 ## Performance Considerations
 

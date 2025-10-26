@@ -30,16 +30,23 @@ const nextConfig = {
   },
   // Security headers. In development, avoid applying to Next's static assets
   // so MIME issues from intermediaries don't block debugging.
-  headers: async () => [
-    {
-      source: '/(.*)',
-      headers: [
-        { key: 'X-Content-Type-Options', value: 'nosniff' },
-        { key: 'X-Frame-Options', value: 'DENY' },
-        { key: 'X-XSS-Protection', value: '1; mode=block' },
-      ],
-    },
-  ],
+  // Only apply security headers in production to avoid interfering
+  // with dev servers/proxies that may mis-serve asset MIME types.
+  headers: async () => {
+    if (process.env.NODE_ENV !== 'production') {
+      return []
+    }
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-XSS-Protection', value: '1; mode=block' },
+        ],
+      },
+    ]
+  },
 }
 
 module.exports = nextConfig

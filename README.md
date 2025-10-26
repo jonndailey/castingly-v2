@@ -22,6 +22,35 @@ A comprehensive platform built with Next.js 15, TypeScript, and MySQL that conne
 - Navigation and routing
   - Removed the standalone "Submit" link; `/actor/submit` is only reachable when applying to a role (via `?opportunity=...`)
 
+### New: Inside Connect (Representation)
+- Embedded two‑sided marketplace for actors ↔ agents
+- Endpoints
+  - `GET/POST /api/connect/listings`, `GET/PATCH /api/connect/listings/:id`
+  - `GET/POST /api/connect/submissions`, `PATCH /api/connect/submissions/:id`
+  - `GET/PUT /api/connect/agency` (agent profile), `PUT /api/connect/prefs` (actor visibility)
+- UI
+  - Actor: `/actor/connect`
+  - Agent: `/agent/connect` (inbox), `/agent/connect/listings` (manage)
+- DB migrations
+  - `database/migrations/20251026_inside_connect.sql`
+  - Index fixes: `database/migrations/20251026_inside_connect_fix_indexes.sql`
+- Seeding (dev/cluster)
+  - `scripts/seed-inside-connect.sql` (base)
+  - `scripts/seed-inside-connect-more.sql` (more listings)
+  - `scripts/seed-inside-connect-submissions-simple.sql` (sample inbox)
+- Migration helper
+  - `scripts/apply-inside-connect.mjs` (env‑aware, idempotent)
+
+### Login + UI polish
+- Login page icons use lucide‑react (no emojis); removed broken Core image and “Powered by Dailey Core” line.
+- Auth indicator is a small pill near Logout (desktop sidebar) instead of a large banner.
+- Profile photo consistency: Actor Profile uses the same source as Dashboard (`/api/media/avatar/:id` fallback).
+- Mobile avatar camera button made smaller (reduced border/ring/shadow).
+
+### Profile saves across mixed schemas
+- Profile update only writes columns that exist (`profiles` table introspection) to avoid “Unknown column” errors.
+- Headshot uploads trigger a client `reloadMedia()` for immediate counters and thumbnails.
+
 ### ✅ Migration Complete (October 17, 2025)
 - ✅ **1,082 users fully migrated** to Dailey Core authentication
 - ✅ **2,500+ media files** migrated to DMAPI storage
@@ -202,6 +231,21 @@ castingly-v2/
 6. **Access the application**
    - Local: http://localhost:3000
    - Production behind Apache proxies to http://127.0.0.1:3003 (PM2 `PORT=3003`)
+
+### Inside Connect: applying DB schema
+```bash
+# Local/dev DB
+mysql -h 127.0.0.1 -P 3306 -u nikon -p casting_portal < database/migrations/20251026_inside_connect.sql
+mysql -h 127.0.0.1 -P 3306 -u nikon -p casting_portal < database/migrations/20251026_inside_connect_fix_indexes.sql
+
+# Cluster via app server env (.env.production)
+MIGRATION_ENV=.env.production node scripts/apply-inside-connect.mjs
+
+# Seed (optional)
+mysql -h 127.0.0.1 -P 3307 -u castingly_app -p castingly < scripts/seed-inside-connect.sql
+mysql -h 127.0.0.1 -P 3307 -u castingly_app -p castingly < scripts/seed-inside-connect-more.sql
+mysql -h 127.0.0.1 -P 3307 -u castingly_app -p castingly < scripts/seed-inside-connect-submissions-simple.sql
+```
 
 ### Test Accounts
 Development includes test accounts with real migrated data:

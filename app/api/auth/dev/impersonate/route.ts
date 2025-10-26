@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth as legacyAuth, actors as legacyActors } from '@/lib/db_existing'
 import { resolveWebAvatarUrl } from '@/lib/image-url'
+import { isNonProduction } from '@/lib/env'
 
 export async function POST(request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') {
+    if (!isNonProduction()) {
       return NextResponse.json({ error: 'Not available in production' }, { status: 403 })
     }
 
