@@ -271,11 +271,12 @@ export default function ActorSubmissions() {
         
         {/* Filter Tabs */}
         <div className="mb-6">
-          <div className="flex gap-2 overflow-x-auto pb-2">
+          <div className="flex gap-1 sm:gap-2 overflow-x-auto pb-2 -mx-1 px-1">
             <Button
               onClick={() => setFilterStatus('all')}
               variant={filterStatus === 'all' ? 'default' : 'outline'}
               size="sm"
+              className="whitespace-nowrap text-xs sm:text-sm"
             >
               All ({submissions.length})
             </Button>
@@ -287,9 +288,12 @@ export default function ActorSubmissions() {
                   onClick={() => setFilterStatus(status)}
                   variant={filterStatus === status ? 'default' : 'outline'}
                   size="sm"
+                  className="whitespace-nowrap text-xs sm:text-sm"
                 >
-                  {config.icon}
-                  <span className="ml-2">{config.label} ({count})</span>
+                  {config.icon && (
+                    <span className="inline-flex items-center"><span className="mr-1 -ml-0.5 scale-90">{config.icon}</span></span>
+                  )}
+                  <span>{config.label} ({count})</span>
                 </Button>
               )
             })}

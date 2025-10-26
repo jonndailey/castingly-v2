@@ -10,6 +10,7 @@ const DAILEY_CORE_AUTH_URL =
   process.env.NEXT_PUBLIC_DAILEY_CORE_AUTH_URL ||
   'http://100.105.97.19:3002'
 
+// Default to 'castingly' which is the registered DMAPI application id
 const DMAPI_APP_ID = process.env.DMAPI_APP_ID || 'castingly'
 const DMAPI_APP_SLUG = process.env.DMAPI_APP_SLUG || DMAPI_APP_ID
 
@@ -100,22 +101,19 @@ async function authenticateService(): Promise<AuthPayload> {
     )
   }
 
-  const response = await fetch(
-    `${ensureBaseUrl(DAILEY_CORE_AUTH_URL)}/auth/login`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Client-Id': DMAPI_APP_SLUG,
-        'User-Agent': 'Castingly/DMAPI-Service',
-      },
-      body: JSON.stringify({
-        email: DMAPI_SERVICE_EMAIL,
-        password: DMAPI_SERVICE_PASSWORD,
-        app_slug: DMAPI_APP_SLUG,
-      }),
-    }
-  )
+  const response = await fetch(`${ensureBaseUrl(DAILEY_CORE_AUTH_URL)}/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Client-Id': DMAPI_APP_ID,
+      'User-Agent': 'Castingly/DMAPI-Service',
+    },
+    body: JSON.stringify({
+      email: DMAPI_SERVICE_EMAIL,
+      password: DMAPI_SERVICE_PASSWORD,
+      app_slug: DMAPI_APP_SLUG || DMAPI_APP_ID,
+    }),
+  })
 
   if (!response.ok) {
     let body: any = null
@@ -238,21 +236,31 @@ async function serviceFetch<T>(
     body?: BodyInit | null
     headers?: Record<string, string>
     retryOnAuthFailure?: boolean
+    timeoutMs?: number
   } = {}
 ): Promise<T> {
-  const { method = 'GET', body, headers = {}, retryOnAuthFailure = true } =
+  const { method = 'GET', body, headers = {}, retryOnAuthFailure = true, timeoutMs } =
     options
 
   const token = await obtainServiceToken()
+  const controller = new AbortController()
+  let timeout: any
+  const to = typeof timeoutMs === 'number' ? timeoutMs : (method === 'GET' ? 2500 : 10000)
+  if (to > 0 && typeof AbortController !== 'undefined') {
+    timeout = setTimeout(() => controller.abort(), to)
+  }
   const response = await fetch(`${ensureBaseUrl(DMAPI_BASE_URL)}${path}`, {
     method,
     body,
     headers: {
       Authorization: `Bearer ${token}`,
+      'X-Client-Id': DMAPI_APP_SLUG || DMAPI_APP_ID,
       'User-Agent': 'Castingly/DMAPI-Service',
       ...headers,
     },
+    signal: controller.signal as any,
   })
+  if (timeout) clearTimeout(timeout)
 
   if (response.status === 401 && retryOnAuthFailure) {
     await obtainServiceToken(true)
@@ -286,7 +294,7 @@ async function serviceFetch<T>(
 
 export async function listFiles(params: ServiceListParams = {}) {
   const query = buildQueryString(params)
-  const data = await serviceFetch<ServiceListResponse>(`/api/files?${query}`)
+  const data = await serviceFetch<ServiceListResponse>(`/api/files?${query}`, { timeoutMs: 3000 })
   // Normalize any relative URLs to absolute DMAPI base
   if (Array.isArray(data?.files)) {
     for (const f of data.files) {
@@ -300,7 +308,7 @@ export async function getFile(fileId: string) {
   if (!fileId) {
     throw new Error('File ID is required')
   }
-  const f = await serviceFetch<DmapiFile>(`/api/files/${fileId}`)
+  const f = await serviceFetch<DmapiFile>(`/api/files/${fileId}`, { timeoutMs: 3000 })
   normalizeFileUrls(f)
   return f
 }
@@ -311,6 +319,7 @@ export async function deleteFile(fileId: string) {
   }
   await serviceFetch(`/api/files/${fileId}`, {
     method: 'DELETE',
+    timeoutMs: 6000,
   })
 }
 
@@ -350,7 +359,8 @@ export async function listBucketFolder(options: {
   searchParams.set('path', normalizedPath)
 
   return serviceFetch<BucketFolderResponse>(
-    `/api/buckets/${encodeURIComponent(options.bucketId)}/files?${searchParams.toString()}`
+    `/api/buckets/${encodeURIComponent(options.bucketId)}/files?${searchParams.toString()}`,
+    { timeoutMs: 2500 }
   ).then((data) => {
     if (Array.isArray(data?.files)) {
       for (const f of data.files) {
@@ -369,7 +379,7 @@ export async function uploadFileForActor(options: {
   actorId: string | number
   file: File | Blob
   filename: string
-  category: 'headshot' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other'
+  category: 'headshot' | 'gallery' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other'
   metadata?: Record<string, unknown>
   bucketId?: string
   folderPath?: string
@@ -407,14 +417,20 @@ export async function uploadFileForActor(options: {
   }
   form.append('metadata', JSON.stringify(metadata))
 
+  const uploadController = new AbortController()
+  const uploadTimeoutMs = parseInt(process.env.DMAPI_UPLOAD_TIMEOUT_MS || '15000', 10)
+  const uploadTimeout = setTimeout(() => uploadController.abort(), uploadTimeoutMs)
   const response = await fetch(`${ensureBaseUrl(DMAPI_BASE_URL)}/api/upload`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
+      'X-Client-Id': DMAPI_APP_SLUG,
       'User-Agent': 'Castingly/DMAPI-Service',
     },
     body: form as unknown as BodyInit,
+    signal: uploadController.signal as any,
   })
+  clearTimeout(uploadTimeout)
 
   if (!response.ok) {
     let errorBody: any = null

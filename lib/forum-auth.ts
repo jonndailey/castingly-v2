@@ -18,25 +18,25 @@ function parseBoolean(value: string | null): boolean | undefined {
 }
 
 export async function resolveForumUser(request: NextRequest): Promise<ForumUserContext | null> {
-  try {
-    const contextHeader = request.headers.get('x-user-context')
-    let headerContext: Partial<ForumUserContext> & { id?: string } = {}
+  const contextHeader = request.headers.get('x-user-context')
+  let headerContext: Partial<ForumUserContext> & { id?: string } = {}
 
-    if (contextHeader) {
-      try {
-        const parsed = JSON.parse(contextHeader)
-        headerContext = parsed
-      } catch (error) {
-        console.warn('Failed to parse x-user-context header:', error)
-      }
+  if (contextHeader) {
+    try {
+      const parsed = JSON.parse(contextHeader)
+      headerContext = parsed
+    } catch (error) {
+      console.warn('Failed to parse x-user-context header:', error)
     }
+  }
 
-    const headerId = request.headers.get('x-user-id') || headerContext.id || undefined
-    const headerRole = (request.headers.get('x-user-role') as ForumUserContext['role']) || headerContext.role
-    const headerVerified = parseBoolean(request.headers.get('x-user-verified'))
-    const headerInvestor = parseBoolean(request.headers.get('x-user-investor'))
+  const headerId = request.headers.get('x-user-id') || headerContext.id || undefined
+  const headerRole = (request.headers.get('x-user-role') as ForumUserContext['role']) || headerContext.role
+  const headerVerified = parseBoolean(request.headers.get('x-user-verified'))
+  const headerInvestor = parseBoolean(request.headers.get('x-user-investor'))
 
-    if (headerId) {
+  if (headerId) {
+    try {
       const rows = await query(
         `SELECT id, role, is_verified_professional, is_investor
          FROM users
@@ -56,29 +56,28 @@ export async function resolveForumUser(request: NextRequest): Promise<ForumUserC
           is_investor: Boolean(row.is_investor ?? headerInvestor ?? false)
         }
       }
-
-      if (headerRole) {
-        return {
-          id: headerId,
-          role: headerRole,
-          is_verified_professional: headerVerified ?? headerContext.is_verified_professional,
-          is_investor: headerInvestor ?? headerContext.is_investor
-        } as ForumUserContext
-      }
+    } catch (error) {
+      console.warn('Forum user DB lookup failed, falling back to header context:', (error as any)?.message || error)
     }
 
     if (headerRole) {
       return {
-        id: headerContext.id || 'anonymous',
+        id: headerId,
         role: headerRole,
         is_verified_professional: headerVerified ?? headerContext.is_verified_professional,
         is_investor: headerInvestor ?? headerContext.is_investor
       } as ForumUserContext
     }
-
-    return null
-  } catch (error) {
-    console.error('Failed to resolve forum user context:', error)
-    return null
   }
+
+  if (headerRole) {
+    return {
+      id: headerContext.id || 'anonymous',
+      role: headerRole,
+      is_verified_professional: headerVerified ?? headerContext.is_verified_professional,
+      is_investor: headerInvestor ?? headerContext.is_investor
+    } as ForumUserContext
+  }
+
+  return null
 }

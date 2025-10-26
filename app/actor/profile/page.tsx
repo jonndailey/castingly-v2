@@ -36,7 +36,7 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar } from '@/components/ui/avatar'
 import { ForumActivityPanel } from '@/components/forum/forum-activity-panel'
 import useAuthStore from '@/lib/store/auth-store'
-import { useActorProfile, type ActorMediaEntry } from '@/lib/hooks/useActorData'
+import { useActorProfile, useActorMedia, type ActorMediaEntry } from '@/lib/hooks/useActorData'
 
 // Mock data for the profile
 const profileData = {
@@ -99,7 +99,24 @@ const archetypesList = [
 export default function ActorProfile() {
   const router = useRouter()
   const { user, logout, token } = useAuthStore()
+  // Fetch light profile first, then media separately for perceived speed
   const { profile: actorData, loading, error } = useActorProfile(user?.id)
+  const { media, loading: mediaLoading, reload: reloadMedia } = useActorMedia(user?.id)
+  
+  const deleteMediaFile = async (fileId: string) => {
+    if (!user?.id || !token || !fileId) return
+    if (!confirm('Delete this media file?')) return
+    try {
+      const res = await fetch(`/api/media/actor/${encodeURIComponent(String(user.id))}/files/${encodeURIComponent(String(fileId))}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Delete failed')
+      reloadMedia()
+    } catch (e) {
+      alert('Failed to delete media file')
+    }
+  }
   const [isEditing, setIsEditing] = useState(false)
   const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string }>({})
   const [activeTab, setActiveTab] = useState('overview')
@@ -107,9 +124,10 @@ export default function ActorProfile() {
   const [imageGallery, setImageGallery] = useState<Array<{ src: string; alt: string }>>([])
   const [uploading, setUploading] = useState(false)
   const [uploadMessage, setUploadMessage] = useState<string>('')
-  const [pendingCategory, setPendingCategory] = useState<'headshot' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other'>('headshot')
+  const [pendingCategory, setPendingCategory] = useState<'headshot' | 'gallery' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other'>('headshot')
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null)
 
-  const headshots = (actorData?.media?.headshots ?? []).filter((entry) =>
+  const headshots = (media?.headshots ?? []).filter((entry) =>
     Boolean(entry.url || entry.signed_url || entry.thumbnail_url)
   )
   const headshotGallery = headshots.map((item, index) => ({
@@ -118,9 +136,10 @@ export default function ActorProfile() {
   }))
   const primaryHeadshot = headshots[0] ?? null
 
-  const galleryImages = (actorData?.media?.other ?? [])
+  const galleryImages = (media?.other ?? [])
     .filter((entry) => Boolean(entry.url || entry.signed_url))
     .map((item, index) => ({
+      id: item.id as unknown as string | undefined,
       src: getMediaUrl(item) ?? '',
       alt: item.name || `Gallery ${index + 1}`,
     }))
@@ -174,7 +193,7 @@ export default function ActorProfile() {
   )
 
   // Upload helpers
-  const startUpload = useCallback((category: 'headshot' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other') => {
+  const startUpload = useCallback((category: 'headshot' | 'gallery' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other') => {
     setPendingCategory(category)
     const input = document.getElementById('profile-upload-input') as HTMLInputElement | null
     input?.click()
@@ -187,6 +206,11 @@ export default function ActorProfile() {
 
     setUploading(true)
     try {
+      // Optimistic preview for images
+      if (pendingCategory === 'headshot' || pendingCategory === 'gallery') {
+        const url = URL.createObjectURL(file)
+        setUploadPreviewUrl(url)
+      }
       const form = new FormData()
       form.append('file', file)
       form.append('title', file.name)
@@ -208,6 +232,8 @@ export default function ActorProfile() {
       setTimeout(() => setUploadMessage(''), 3500)
     } finally {
       setUploading(false)
+      // Clear preview after refresh has likely pulled new media
+      setTimeout(() => setUploadPreviewUrl(null), 4000)
     }
   }, [pendingCategory, token, user?.id, router])
   
@@ -274,8 +300,8 @@ export default function ActorProfile() {
 
   const handleSave = async () => {
     try {
-      if (!user) return
-      const res = await fetch(`/api/actors/${user.id}/profile`, {
+      if (!user || !actorData?.id) return
+      const res = await fetch(`/api/actors/${actorData.id}/profile`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -351,13 +377,6 @@ export default function ActorProfile() {
         subtitle="Manage your professional acting profile"
         actions={
           <div className="flex gap-2">
-            <Button
-              onClick={() => router.push('/actor/media')}
-              variant="outline"
-            >
-              <Upload className="w-4 h-4 mr-2" />
-              Upload Media
-            </Button>
             <Button
               onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
               variant={isEditing ? 'default' : 'outline'}
@@ -581,50 +600,55 @@ export default function ActorProfile() {
                       <CardTitle className="flex items-center gap-2">
                         <Globe className="w-5 h-5 text-primary-600" />
                         Public Profile
-                        <Badge className="bg-primary-600 text-white">Premium</Badge>
+                        <Badge size="sm" className="bg-primary-600 text-white">Premium</Badge>
                       </CardTitle>
-                      <CardDescription className="mt-2">
-                        Share your professional profile with anyone - no login required
+                      <CardDescription className="mt-2 text-sm sm:text-base">
+                        Share your professional profile with anyone — no login required
                       </CardDescription>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
-                      <div>
-                        <p className="font-medium">Your public profile URL:</p>
-                        <p className="text-sm text-primary-600 mt-1">
-                          {publicProfileUrl}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => navigator.clipboard.writeText(fullPublicProfileUrl)}
-                          variant="outline"
-                          size="sm"
-                        >
-                          Copy Link
-                        </Button>
-                        <Button
-                          onClick={() => window.open(localProfileUrl, '_blank')}
-                          variant="outline"
-                          size="sm"
-                        >
-                          View Profile
-                        </Button>
+                    <div className="p-4 bg-white rounded-lg border border-gray-200">
+                      <p className="font-medium text-sm sm:text-base">Your public profile URL:</p>
+                      <div className="mt-2 flex flex-col sm:flex-row gap-2 sm:items-center">
+                        <Input
+                          readOnly
+                          value={fullPublicProfileUrl}
+                          className="text-sm sm:text-base font-mono"
+                        />
+                        <div className="flex gap-2 sm:ml-2">
+                          <Button
+                            onClick={() => navigator.clipboard.writeText(fullPublicProfileUrl)}
+                            variant="outline"
+                            size="sm"
+                            className="w-full sm:w-auto"
+                          >
+                            Copy Link
+                          </Button>
+                          <Button
+                            onClick={() => window.open(localProfileUrl, '_blank')}
+                            variant="outline"
+                            size="sm"
+                            className="w-full sm:w-auto"
+                          >
+                            View Profile
+                          </Button>
+                        </div>
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
                       <Button
                         onClick={() => router.push('/actor/public-profile')}
-                        className="bg-primary-600 hover:bg-primary-700"
+                        size="sm"
+                        className="bg-primary-600 hover:bg-primary-700 w-full sm:w-auto"
                       >
                         <Edit className="w-4 h-4 mr-2" />
                         Configure Public Profile
                       </Button>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-xs sm:text-sm text-gray-600">
                         Choose what information to display publicly
                       </p>
                     </div>
@@ -741,6 +765,11 @@ export default function ActorProfile() {
               exit={{ opacity: 0, x: 20 }}
               className="grid md:grid-cols-2 lg:grid-cols-3 gap-6"
             >
+              {mediaLoading && (
+                <div className="md:col-span-2 lg:col-span-3 text-sm text-gray-500">
+                  Loading media…
+                </div>
+              )}
               {/* Hidden uploader for media */}
               <input
                 id="profile-upload-input"
@@ -754,12 +783,20 @@ export default function ActorProfile() {
               )}
               {/* Headshots */}
               <Card>
-                <CardHeader>
-                  <CardTitle>Headshots</CardTitle>
-                  <CardDescription>Professional photos for casting</CardDescription>
-                </CardHeader>
+              <CardHeader>
+                <CardTitle>
+                  Headshots <span className="text-xs text-gray-500">({headshots.length}/20)</span>
+                </CardTitle>
+                <CardDescription>Professional photos for casting</CardDescription>
+              </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
+                    {uploadPreviewUrl && (
+                      <div className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200">
+                        <img src={uploadPreviewUrl} alt="Uploading..." className="h-full w-full object-cover opacity-80" />
+                        <div className="absolute inset-0 flex items-center justify-center text-white text-sm bg-black/20">Uploading…</div>
+                      </div>
+                    )}
                     {headshots.map((photo, index) => (
                       <div
                         key={photo.id || index}
@@ -771,10 +808,22 @@ export default function ActorProfile() {
                           index
                         )}
                       >
+                        {photo.id && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); deleteMediaFile(String(photo.id)) }}
+                            className="absolute top-2 right-2 z-10 bg-white/80 hover:bg-white text-red-600 rounded-full px-2 py-1 text-xs shadow"
+                            title="Delete headshot"
+                          >
+                            Delete
+                          </button>
+                        )}
                         <img
                           src={getMediaUrl(photo) ?? ''}
                           alt={`Headshot ${index + 1}`}
                           className="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
                           onError={(e) => {
                             e.currentTarget.style.display = 'none'
                             e.currentTarget.parentElement?.classList.add('bg-gray-300')
@@ -796,22 +845,42 @@ export default function ActorProfile() {
               
               {/* Gallery Photos */}
               <Card>
-                <CardHeader>
-                  <CardTitle>Gallery</CardTitle>
-                  <CardDescription>Additional photos and portfolio images</CardDescription>
-                </CardHeader>
+              <CardHeader>
+                <CardTitle>
+                  Gallery <span className="text-xs text-gray-500">({galleryImages.length}/20)</span>
+                </CardTitle>
+                <CardDescription>Additional photos and portfolio images</CardDescription>
+              </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
+                    {uploadPreviewUrl && pendingCategory === 'gallery' && (
+                      <div className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200">
+                        <img src={uploadPreviewUrl} alt="Uploading..." className="h-full w-full object-cover opacity-80" />
+                        <div className="absolute inset-0 flex items-center justify-center text-white text-sm bg-black/20">Uploading…</div>
+                      </div>
+                    )}
                     {galleryImages.map((photo, index) => (
                       <div
                         key={`${photo.src}-${index}`}
                         className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => openImageModal(photo.src, photo.alt, galleryImages, index)}
+                        onClick={() => openImageModal(photo.src, photo.alt, galleryImages.map(g => ({ src: g.src, alt: g.alt })), index)}
                       >
+                        {photo.id && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); deleteMediaFile(String(photo.id)) }}
+                            className="absolute top-2 right-2 z-10 bg-white/80 hover:bg-white text-red-600 rounded-full px-2 py-1 text-xs shadow"
+                            title="Delete image"
+                          >
+                            Delete
+                          </button>
+                        )}
                         <img
                           src={photo.src}
                           alt={photo.alt}
                           className="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
                           onError={(e) => {
                             e.currentTarget.style.display = 'none'
                             e.currentTarget.parentElement?.classList.add('bg-gray-300')
@@ -819,7 +888,11 @@ export default function ActorProfile() {
                         />
                       </div>
                     ))}
-                    <button className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-gray-400">
+                    <button
+                      onClick={() => startUpload('gallery')}
+                      disabled={uploading}
+                      className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-gray-400 disabled:opacity-50"
+                    >
                       <Plus className="w-6 h-6 text-gray-400" />
                     </button>
                   </div>
@@ -834,7 +907,7 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {(actorData?.media?.reels ?? []).map((reel) => {
+                    {(media?.reels ?? []).map((reel) => {
                       const reelUrl = getMediaUrl(reel)
 
                       return (
@@ -846,15 +919,20 @@ export default function ActorProfile() {
                             <Film className="h-5 w-5 text-primary-600" />
                             <span className="font-medium">{reel.name || 'Demo Reel'}</span>
                           </div>
-                          {reelUrl && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => window.open(reelUrl, '_blank')}
-                            >
-                              View
-                            </Button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {reelUrl && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => window.open(reelUrl, '_blank')}
+                              >
+                                View
+                              </Button>
+                            )}
+                            {reel.id && (
+                              <Button size="sm" variant="danger" onClick={() => deleteMediaFile(String(reel.id))}>Delete</Button>
+                            )}
+                          </div>
                         </div>
                       )
                     })}
@@ -873,7 +951,7 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {(actorData?.media?.self_tapes ?? []).map((tape) => {
+                    {(media?.self_tapes ?? []).map((tape) => {
                       const tapeUrl = getMediaUrl(tape)
                       return (
                         <div key={tape.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
@@ -881,11 +959,16 @@ export default function ActorProfile() {
                             <Film className="h-5 w-5 text-primary-600" />
                             <span className="font-medium">{tape.name || 'Self-Tape'}</span>
                           </div>
-                          {tapeUrl && (
-                            <Button size="sm" variant="ghost" onClick={() => window.open(tapeUrl, '_blank')}>
-                              View
-                            </Button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {tapeUrl && (
+                              <Button size="sm" variant="ghost" onClick={() => window.open(tapeUrl, '_blank')}>
+                                View
+                              </Button>
+                            )}
+                            {tape.id && (
+                              <Button size="sm" variant="danger" onClick={() => deleteMediaFile(String(tape.id))}>Delete</Button>
+                            )}
+                          </div>
                         </div>
                       )
                     })}
@@ -904,18 +987,23 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {(actorData?.media?.voice_over ?? []).map((vo) => {
+                    {(media?.voice_over ?? []).map((vo) => {
                       const url = getMediaUrl(vo)
                       return (
                         <div key={vo.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
                           <div className="flex items-center gap-3">
                             <span className="font-medium">{vo.name || 'Voice Over'}</span>
                           </div>
-                          {url && (
-                            <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
-                              Listen
-                            </Button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {url && (
+                              <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
+                                Listen
+                              </Button>
+                            )}
+                            {vo.id && (
+                              <Button size="sm" variant="danger" onClick={() => deleteMediaFile(String(vo.id))}>Delete</Button>
+                            )}
+                          </div>
                         </div>
                       )
                     })}
@@ -934,7 +1022,7 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {(actorData?.media?.resumes ?? []).map((doc) => {
+                    {(media?.resumes ?? []).map((doc) => {
                       const url = getMediaUrl(doc)
                       return (
                         <div key={doc.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
@@ -942,11 +1030,16 @@ export default function ActorProfile() {
                             <FileText className="h-5 w-5 text-primary-600" />
                             <span className="font-medium">{doc.name || 'Resume'}</span>
                           </div>
-                          {url && (
-                            <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
-                              View
-                            </Button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {url && (
+                              <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
+                                View
+                              </Button>
+                            )}
+                            {doc.id && (
+                              <Button size="sm" variant="danger" onClick={() => deleteMediaFile(String(doc.id))}>Delete</Button>
+                            )}
+                          </div>
                         </div>
                       )
                     })}

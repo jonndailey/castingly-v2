@@ -57,7 +57,6 @@ export default function ActorSubmit() {
   const searchParams = useSearchParams()
   const opportunityId = searchParams.get('opportunity')
   const { user } = useAuthStore()
-  
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
@@ -81,6 +80,24 @@ export default function ActorSubmit() {
     useProfileResume: true,
     useProfileReel: false
   })
+
+  // Guard: this page should only be reached when applying for a role
+  // If no opportunity id, route back to opportunities with a helpful message
+  if (!opportunityId) {
+    return (
+      <AppLayout>
+        <PageContent>
+          <div className="max-w-md mx-auto text-center py-16">
+            <h2 className="text-lg font-semibold mb-2">No role selected</h2>
+            <p className="text-gray-600 mb-4">Choose a role from Opportunities to start an application.</p>
+            <Button onClick={() => router.replace('/actor/opportunities')} variant="default">
+              Browse Opportunities
+            </Button>
+          </div>
+        </PageContent>
+      </AppLayout>
+    )
+  }
   
   const handleVideoSelect = (video: any) => {
     setFormData({

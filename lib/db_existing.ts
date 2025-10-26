@@ -54,7 +54,7 @@ export const actors = {
               u.is_verified_professional, u.is_investor, u.forum_last_seen_at,
               u.created_at, u.updated_at,
               p.bio, p.location, p.height, p.eye_color, p.hair_color,
-              p.skills
+              p.skills, p.metadata AS profile_metadata
        FROM users u
        LEFT JOIN profiles p ON p.user_id = u.id
        WHERE u.id = ? AND u.role = 'actor'`,
@@ -221,72 +221,127 @@ export const profiles = {
       instagram: string
       twitter: string
       website: string
+      age_range: string
     }>
   ) {
-    // Update users table
+    function normalizeAvatarUrl(value: unknown): string | null {
+      if (!value || typeof value !== 'string') return null
+      const input = value.trim()
+      if (!input) return null
+      // If it already fits in column, keep as-is
+      if (input.length <= 480) return input
+      // Try to build a short proxy URL from known S3 path shape
+      try {
+        const u = new URL(input)
+        const parts = u.pathname.split('/').filter(Boolean)
+        const idx = parts.indexOf('files')
+        if (idx >= 0 && parts.length >= idx + 4) {
+          const userId = parts[idx + 1]
+          const bucket = parts[idx + 2]
+          const name = parts[parts.length - 1]
+          const pathParts = parts.slice(idx + 3, parts.length - 1) // between bucket and name
+          const folderPath = pathParts.join('/')
+          const qs = new URLSearchParams()
+          qs.set('bucket', bucket)
+          qs.set('userId', userId)
+          if (folderPath) qs.set('path', folderPath)
+          qs.set('name', name)
+          const proxy = `/api/media/proxy?${qs.toString()}`
+          if (proxy.length <= 500) return proxy
+        }
+      } catch {}
+      // Fallback: drop query string which is the main size contributor
+      const base = input.split('?')[0]
+      if (base.length <= 500) return base
+      // As a last resort, return null to avoid DB error
+      return null
+    }
+    // Update users table (new schema fields)
     const userFields: string[] = []
     const userValues: any[] = []
 
-    if (data.first_name !== undefined) {
-      userFields.push('first_name = ?')
-      userValues.push(data.first_name)
+    // If client supplies an avatar as profile_image, map to users.avatar_url
+    if (data.profile_image !== undefined) {
+      const safe = normalizeAvatarUrl(data.profile_image)
+      userFields.push('avatar_url = ?')
+      userValues.push(safe)
     }
-    if (data.last_name !== undefined) {
-      userFields.push('last_name = ?')
-      userValues.push(data.last_name)
+
+    // Some callers may send first/last; if present, combine into name
+    if (data.first_name !== undefined || data.last_name !== undefined) {
+      userFields.push('name = ?')
+      const first = (data.first_name || '').trim()
+      const last = (data.last_name || '').trim()
+      userValues.push([first, last].filter(Boolean).join(' ') || null)
     }
-    // Skip phone for legacy users table to avoid schema mismatches
+    if (data.phone !== undefined) {
+      userFields.push('phone = ?')
+      userValues.push(data.phone)
+    }
 
     if (userFields.length) {
       userValues.push(id)
       await query(`UPDATE users SET ${userFields.join(', ')} WHERE id = ?`, userValues)
     }
 
-    // Update actors table
-    const actorFields: string[] = []
-    const actorValues: any[] = []
+    // Update profiles table (production schema)
+    const profileFields: string[] = []
+    const profileValues: any[] = []
 
     if (data.location !== undefined) {
-      actorFields.push('location = ?')
-      actorValues.push(data.location)
+      profileFields.push('location = ?')
+      profileValues.push(data.location)
     }
     if (data.bio !== undefined) {
-      actorFields.push('bio = ?')
-      actorValues.push(data.bio)
+      profileFields.push('bio = ?')
+      profileValues.push(data.bio)
     }
     if (data.skills !== undefined) {
-      const skillsStr = Array.isArray(data.skills) ? data.skills.join(', ') : data.skills
-      actorFields.push('skills = ?')
-      actorValues.push(skillsStr)
+      // Cast to JSON array when provided as CSV string
+      const skillsVal = Array.isArray(data.skills)
+        ? JSON.stringify(data.skills)
+        : JSON.stringify(String(data.skills).split(',').map(s => s.trim()).filter(Boolean))
+      profileFields.push('skills = ?')
+      profileValues.push(skillsVal)
     }
     if (data.height !== undefined) {
-      actorFields.push('height = ?')
-      actorValues.push(data.height)
+      profileFields.push('height = ?')
+      profileValues.push(data.height)
     }
     if (data.eye_color !== undefined) {
-      actorFields.push('eye_color = ?')
-      actorValues.push(data.eye_color)
+      profileFields.push('eye_color = ?')
+      profileValues.push(data.eye_color)
     }
     if (data.hair_color !== undefined) {
-      actorFields.push('hair_color = ?')
-      actorValues.push(data.hair_color)
-    }
-    if (data.profile_image !== undefined) {
-      actorFields.push('profile_image = ?')
-      actorValues.push(data.profile_image)
+      profileFields.push('hair_color = ?')
+      profileValues.push(data.hair_color)
     }
     if (data.resume_url !== undefined) {
-      actorFields.push('resume_url = ?')
-      actorValues.push(data.resume_url)
+      profileFields.push('resume_url = ?')
+      profileValues.push(data.resume_url)
     }
-    // Note: Some legacy schemas may not include instagram/twitter/website columns.
-    // Skip updating those to avoid ER_BAD_FIELD_ERROR.
+    if (data.instagram !== undefined) {
+      profileFields.push('instagram = ?')
+      profileValues.push(data.instagram)
+    }
+    if (data.twitter !== undefined) {
+      profileFields.push('twitter = ?')
+      profileValues.push(data.twitter)
+    }
+    if (data.website !== undefined) {
+      profileFields.push('website = ?')
+      profileValues.push(data.website)
+    }
+    if (data.age_range !== undefined) {
+      profileFields.push('age_range = ?')
+      profileValues.push(data.age_range)
+    }
 
-    if (actorFields.length) {
-      actorValues.push(id)
+    if (profileFields.length) {
+      profileValues.push(id)
       await query(
-        `UPDATE actors SET ${actorFields.join(', ')} WHERE user_id = ?`,
-        actorValues
+        `UPDATE profiles SET ${profileFields.join(', ')} WHERE user_id = ?`,
+        profileValues
       )
     }
 

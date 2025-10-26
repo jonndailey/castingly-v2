@@ -30,7 +30,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="h-full">
-      <body className="h-full bg-gray-50">
+      <body className="h-full bg-gray-50 overflow-x-hidden">
         <ClientProvider>
           <div className="min-h-full">
             {children}

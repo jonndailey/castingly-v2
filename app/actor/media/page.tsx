@@ -49,6 +49,7 @@ type MediaItem = {
 const CATEGORY_LABELS: Record<MediaCategory | 'all', string> = {
   all: 'All Media',
   headshot: 'Headshots',
+  gallery: 'Gallery',
   reel: 'Reels',
   self_tape: 'Self-Tapes',
   voice_over: 'Voice Over',
@@ -60,6 +61,7 @@ const CATEGORY_LABELS: Record<MediaCategory | 'all', string> = {
 const DEFAULT_UPLOAD_CATEGORY: MediaCategory = 'headshot'
 const UPLOADABLE_CATEGORIES: MediaCategory[] = [
   'headshot',
+  'gallery',
   'reel',
   'self_tape',
   'voice_over',
@@ -450,8 +452,8 @@ export default function ActorMedia() {
             ))}
           </div>
         ) : (
-          <div className="mt-6 overflow-hidden rounded-lg border border-gray-200">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <div className="mt-6 overflow-x-auto rounded-lg border border-gray-200">
+            <table className="w-full min-w-[640px] divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">

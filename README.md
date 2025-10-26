@@ -6,6 +6,22 @@ A comprehensive platform built with Next.js 15, TypeScript, and MySQL that conne
 
 ## 🚀 Current Status: **Production Ready - Fully Migrated**
 
+### Recent Updates (Oct 2025)
+- Mobile polish across actor dashboards, submissions, opportunities, and profile
+  - Buttons and tabs are readable on phones and remain large tap‑targets
+  - Bottom nav active line removed; highlight state is sufficient
+  - Public Profile card now uses a copyable input with full‑width buttons on mobile
+- Real profile completion with hide option
+  - Completion is calculated from profile fields + media (headshot + gallery)
+  - Users can hide the banner (stored in `profiles.metadata.preferences.hideProfileCompletion`)
+- Faster, resilient images
+  - `/api/media/proxy` issues 302 redirects to working URLs and picks the best image variant
+  - Short DMAPI timeouts to avoid page stalls; longer cache for proxy/avatar redirects
+- Distinct logins per role
+  - When authenticating via Dailey Core, Castingly overrides the role from the users table if present to ensure agent/casting/admin experiences are correct
+- Navigation and routing
+  - Removed the standalone "Submit" link; `/actor/submit` is only reachable when applying to a role (via `?opportunity=...`)
+
 ### ✅ Migration Complete (October 17, 2025)
 - ✅ **1,082 users fully migrated** to Dailey Core authentication
 - ✅ **2,500+ media files** migrated to DMAPI storage
@@ -185,7 +201,7 @@ castingly-v2/
 
 6. **Access the application**
    - Local: http://localhost:3000
-   - Tailscale: http://100.105.97.19:3002
+   - Production behind Apache proxies to http://127.0.0.1:3003 (PM2 `PORT=3003`)
 
 ### Test Accounts
 Development includes test accounts with real migrated data:
@@ -449,6 +465,45 @@ Notes on legacy profile reads
 - Forum activity: uses new schema fields (`name`, `avatar_url`). Endpoint requires authentication.
 - DMAPI audience: temporarily permissive (accepts any Core audience). Plan: set `CORE_AUDIENCE=<Castingly app_id>` and remove `ALLOW_CORE_ANY_AUD`.
 - DMAPI DB: uploads succeed to storage; a small DB patch (ensure application row exists) removes occasional FK insert failures and populates `/api/files` immediately.
+
+## 🖼️ Uploads & Limits (Current Behavior)
+
+- User upload flows
+  - Dashboard camera: uploads a headshot inline and updates avatar immediately.
+  - Profile Media: headshots/gallery show counters (x/20) and fill space as soon as the upload starts.
+  - The “Upload Media” page link has been removed; uploads are inline.
+
+- Server limits (enforced)
+  - Size caps: reels up to 500MB; images/docs capped by env.
+  - Count caps: headshots/gallery 20, reels 10 (temporarily relaxed while DMAPI list is stabilized).
+  - Env knobs (Castingly):
+    - `MEDIA_LIMIT_IMAGE_COUNT` (default 20)
+    - `MEDIA_LIMIT_REEL_COUNT` (default 10)
+    - `MEDIA_LIMIT_REEL_MAX_MB` (default 500)
+    - `DISABLE_IMAGE_LIMITS=true` (temporarily bypass headshot/gallery count while DMAPI list is being fixed)
+
+- DMAPI integration flags
+  - `DMAPI_DISABLE_DB_LIST=true` (on DMAPI): bypass DB listing and use storage fallback; faster and avoids list SQL errors.
+  - PM2: disable `watch` for dmapi-backend in production; `pm2 save` to persist.
+
+- Reset endpoint (cleanup)
+  - POST `/api/admin/media/reset-actor/:actorId` with header `x-confirm: purge` purges headshots/gallery for that actor.
+  - Uses DMAPI storage folder fallback (no DB required) and returns JSON `{success, deleted, failed[]}`.
+
+- Upload responses (simplified)
+  - APIs return a single file entry with `id`, and when DMAPI DB is delayed, a `signed_url` and `proxy_url` for immediate use.
+  - The UI prefers a usable URL so the image persists across refresh immediately.
+
+## 🧰 DMAPI Fixes (Planned/Applied)
+
+- Applied now
+  - Feature-flagged DB listing off: `DMAPI_DISABLE_DB_LIST=true` to avoid `mysqld_stmt_execute` errors and latency.
+  - Hardened JSON parsing in duplicate-hash lookup paths to avoid `Unexpected end of JSON input`.
+
+- Next patches
+  - Replace `COUNT(*) OVER()` with separate `COUNT(*)` in DB list; whitelist `order_by` binding.
+  - Gate pdf processing to `application/pdf` to stop pdfjs parse noise.
+  - Disable pm2 `watch` for dmapi-backend; `pm2 save`.
 
 ## 🔒 Production Checklist (Castingly server)
 

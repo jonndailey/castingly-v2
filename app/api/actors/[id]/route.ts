@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { actors, auth as legacyAuth } from '@/lib/db_existing'
 import { resolveWebAvatarUrl } from '@/lib/image-url'
-import { validateUserToken, type DmapiFile } from '@/lib/dmapi'
+import { validateUserToken, type DmapiFile, listFiles as listUserFiles } from '@/lib/dmapi'
 import { listActorFiles as listActorDmapiFiles, listFiles as listDmapiFiles, listBucketFolder } from '@/lib/server/dmapi-service'
 import { daileyCoreAuth } from '@/lib/auth/dailey-core'
 
@@ -43,13 +43,27 @@ type SimplifiedMedia = {
 
 const PUBLIC_MEDIA_CATEGORIES = new Set(['headshot', 'reel', 'voice_over'])
 
+// Simple in-process micro-cache to smooth bursts
+type CacheEntry = { body: any; expires: number }
+const cache = new Map<string, CacheEntry>()
+const CACHE_TTL_MS = 15_000
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { searchParams } = new URL(request.url)
+    const includeMediaParam = searchParams.get('media') || searchParams.get('includeMedia')
+    const includeMedia = includeMediaParam === '1' || includeMediaParam === 'true'
     const { id } = await context.params
-    let actor = await actors.getById(id)
+    let actor: any = null
+    // Try DB first but do not fail hard if DB is unavailable
+    try {
+      actor = await actors.getById(id)
+    } catch (e) {
+      try { console.warn('[actors/:id] DB lookup failed, will try token/minimal fallback:', (e as any)?.message || e) } catch {}
+    }
 
     // Fallback: if no legacy record by id (e.g., Core UUID passed), try by email from token
     if (!actor) {
@@ -96,6 +110,24 @@ export async function GET(
       } catch {
         // ignore
       }
+      // Dev-only fallback: if DB is down and Core validation unavailable, allow minimal actor by requested id
+      if (!actor && process.env.NODE_ENV !== 'production') {
+        actor = {
+          id: String(id),
+          email: `${String(id)}@local.dev`,
+          name: `Actor ${String(id).slice(0, 6)}`,
+          role: 'actor',
+          profile_image: null,
+          bio: null,
+          skills: null,
+          height: null,
+          eye_color: null,
+          hair_color: null,
+          location: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as any
+      }
     }
 
     if (!actor) {
@@ -105,111 +137,94 @@ export async function GET(
       )
     }
 
-    const legacyMedia = (await actors.getMedia(String((actor as any).id))) as LegacyMediaRecord[]
+    let legacyMedia: LegacyMediaRecord[] = []
+    try {
+      legacyMedia = (await actors.getMedia(String((actor as any).id))) as LegacyMediaRecord[]
+    } catch (e) {
+      try { console.warn('[actors/:id] DB media lookup failed, continuing with DMAPI/empty legacy media:', (e as any)?.message || e) } catch {}
+      legacyMedia = []
+    }
 
     const skillsArray = parseSkills(actor.skills)
 
-    const authResult = await validateUserToken(
-      request.headers.get('authorization')
-    )
+    const authHeader = request.headers.get('authorization')
+    const authResult = await validateUserToken(authHeader)
     const includePrivate = authResult?.userId === actor.id
 
+    // Serve from cache quickly if available and safe
+    const cacheKey = `${actor.id}|m=${includeMedia?'1':'0'}|p=${includePrivate?'1':'0'}`
+    const nowTs = Date.now()
+    const cached = cache.get(cacheKey)
+    if (cached && cached.expires > nowTs) {
+      const hdrs = new Headers()
+      hdrs.set('Cache-Control', includeMedia ? 'private, max-age=20' : (includePrivate ? 'private, max-age=10' : 'private, max-age=60'))
+      hdrs.set('Vary', 'Authorization')
+      return NextResponse.json(cached.body, { headers: hdrs })
+    }
+
     let dmapiFiles: DmapiFile[] = []
-    try {
-      // 1) Prefer exact bucket-folder listing for headshots so avatar and primary photos appear
-      const listUserId = process.env.DMAPI_LIST_USER_ID || process.env.DMAPI_SERVICE_SUBJECT_ID
-      if (listUserId) {
-        try {
-          const folder = await listBucketFolder({
-            bucketId: 'castingly-public',
-            userId: String(listUserId),
-            path: `actors/${actor.id}/headshots`,
-          })
-          const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
-          try { console.log('[actors/:id] bucket list files', { count: (folder.files||[]).length, base, listUserId: String(listUserId), actorId: String(actor.id) }); } catch {}
-          const mapped: DmapiFile[] = (folder.files || []).map((it: any) => {
-            const name: string = String(it.name || '')
-            const path: string = String(it.path || '')
-            const ext = name.toLowerCase().split('.').pop() || ''
-            const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : 'application/octet-stream'
-            const tail = path.replace(/^.*?\//, '') // drop the leading user id segment
-            const publicUrl = base ? `${base}/api/serve/files/${encodeURIComponent(String(listUserId))}/castingly-public/${tail ? tail + '/' : ''}${encodeURIComponent(name)}` : null
-            return {
-              id: `${actor.id}-${name}-${Math.random().toString(36).slice(2,8)}`,
-              original_filename: name,
-              file_size: Number(it.size || 0),
-              mime_type: mime,
-              file_extension: ext,
-              uploaded_at: new Date().toISOString(),
-              public_url: publicUrl,
-              signed_url: null,
-              thumbnail_url: publicUrl,
-              metadata: {
-                bucketId: 'castingly-public',
-                folderPath: `actors/${actor.id}/headshots`,
-                source: 'castingly',
-              }
-            } as unknown as DmapiFile
-          })
-          dmapiFiles = mapped
-          try { console.log('[actors/:id] mapped dmapi files', { count: dmapiFiles.length }); } catch {}
-        } catch {}
-      }
-
-      // Also try private resumes via bucket listing and proxy
-      if (listUserId) {
-        try {
-          const folder = await listBucketFolder({
-            bucketId: 'castingly-private',
-            userId: String(listUserId),
-            path: `actors/${actor.id}/resumes`,
-          })
-          const baseProxy = '/api/media/proxy'
-          const resumes: DmapiFile[] = (folder.files || []).map((it: any) => {
-            const name: string = String(it.name || '')
-            const ext = name.toLowerCase().split('.').pop() || ''
-            const mime = ext === 'pdf' ? 'application/pdf' : 'application/octet-stream'
-            const signed = `${baseProxy}?bucket=castingly-private&userId=${encodeURIComponent(String(listUserId))}&path=${encodeURIComponent(`actors/${actor.id}/resumes`)}&name=${encodeURIComponent(name)}`
-            return {
-              id: `${actor.id}-resume-${name}-${Math.random().toString(36).slice(2,8)}`,
-              original_filename: name,
-              file_size: Number(it.size || 0),
-              mime_type: mime,
-              file_extension: ext,
-              uploaded_at: new Date().toISOString(),
-              public_url: null,
-              signed_url: signed,
-              thumbnail_url: null,
-              metadata: {
-                bucketId: 'castingly-private',
-                folderPath: `actors/${actor.id}/resumes`,
-                source: 'castingly',
-              }
-            } as unknown as DmapiFile
-          })
-          dmapiFiles.push(...resumes)
-        } catch {}
-      }
-
-      // 2) Broaden: fetch a wider batch and filter by actor (folder/email/metadata)
+    if (includeMedia) {
       try {
-        const alt = await listDmapiFiles({ limit: 500, sort: 'uploaded_at', order: 'desc' })
-        const broader = (alt.files ?? []).filter((file) => matchesActor(file, actor))
-        // Merge unique by id
-        const seen = new Set(dmapiFiles.map(f => f.id))
-        for (const f of broader) {
-          if (!seen.has(f.id)) {
-            dmapiFiles.push(f)
-            seen.add(f.id)
-          }
+        // Only list headshots folder for speed
+        const listUserId = String(actor.id)
+        if (listUserId) {
+          try {
+            const folder = await listBucketFolder({
+              bucketId: 'castingly-public',
+              userId: String(listUserId),
+              path: `actors/${actor.id}/headshots`,
+            })
+            const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
+            const mapped: DmapiFile[] = (folder.files || []).map((it: any) => {
+              const name: string = String(it.name || '')
+              const path: string = String(it.path || '')
+              const ext = name.toLowerCase().split('.').pop() || ''
+              const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : 'application/octet-stream'
+              const tail = path.replace(/^.*?\//, '')
+              const publicUrl = base ? `${base}/api/serve/files/${encodeURIComponent(String(listUserId))}/castingly-public/${tail ? tail + '/' : ''}${encodeURIComponent(name)}` : null
+              return {
+                id: String(it.id || `${actor.id}-${name}-${Math.random().toString(36).slice(2,8)}`),
+                original_filename: name,
+                file_size: Number(it.size || 0),
+                mime_type: mime,
+                file_extension: ext,
+                uploaded_at: new Date().toISOString(),
+                public_url: publicUrl,
+                signed_url: null,
+                thumbnail_url: publicUrl,
+                metadata: {
+                  bucketId: 'castingly-public',
+                  folderPath: `actors/${actor.id}/headshots`,
+                  source: 'castingly',
+                }
+              } as unknown as DmapiFile
+            })
+            dmapiFiles = mapped
+          } catch {}
         }
-      } catch {}
-    } catch (error) {
-      console.error('Failed to fetch DMAPI media for actor:', error)
+        // Fetch non-headshot categories via metadata filter in small batches
+        try {
+          const categories = ['resume', 'reel', 'self_tape', 'voice_over', 'document']
+          for (const cat of categories) {
+            try {
+              const res = await listActorDmapiFiles(actor.id, { limit: 200, metadata: { category: cat } }) as any
+              const files = Array.isArray(res?.files) ? res.files : []
+              for (const f of files) {
+                // Skip any headshots picked up via metadata to avoid duplicates
+                const metaCat = (f?.metadata?.category || '').toString().toLowerCase()
+                if (metaCat === 'headshot') continue
+                dmapiFiles.push(f)
+              }
+            } catch {}
+          }
+        } catch {}
+      } catch (error) {
+        console.error('Failed to fetch DMAPI media for actor:', error)
+      }
     }
 
     let media: CategorisedMedia
-    if (dmapiFiles.length > 0) {
+    if (includeMedia && dmapiFiles.length > 0) {
       const categorised = categoriseDmapiFiles(dmapiFiles)
       media = includePrivate
         ? categorised
@@ -228,28 +243,91 @@ export async function GET(
       legacyHeadshots.find((record) => Boolean(record.is_primary)) ||
       legacyHeadshots[0] ||
       null
-    const legacyAvatar =
+    let legacyAvatar: string | null =
       primaryLegacyHeadshot?.media_url || actor.profile_image || null
 
-    return NextResponse.json({
+    // If the stored avatar is our proxy without a presigned URL, try to attach one using the caller's token
+    try {
+      const vr = await validateUserToken(authHeader)
+      const needsSign = typeof legacyAvatar === 'string' && legacyAvatar.includes('/api/media/proxy?') && !legacyAvatar.includes('signed=')
+      if (vr?.token && needsSign) {
+        const u = new URL(legacyAvatar!, 'https://castingly.dailey.dev')
+        const name = u.searchParams.get('name') || ''
+        const folder = u.searchParams.get('path') || ''
+        const listed = await listUserFiles(vr.token, { limit: 500 })
+        const files = Array.isArray(listed?.files) ? listed.files : []
+        const match = files.find((f: any) => {
+          const fname = String(f.original_filename || f.name || f.id || '')
+          const fpath = String(f.folder_path || (f.metadata && (f.metadata as any).folderPath) || '')
+          return fname === name && (!folder || fpath.includes(folder))
+        })
+        const signed = (match as any)?.signed_url as string | undefined
+        if (signed) {
+          u.searchParams.set('signed', signed)
+          legacyAvatar = u.pathname + '?' + u.searchParams.toString()
+        }
+      }
+    } catch {}
+
+    // Compute real profile completion
+    const hasBio = typeof actor.bio === 'string' && actor.bio.trim().length > 0
+    const hasLocation = typeof actor.location === 'string' && actor.location.trim().length > 0
+    const hasHeight = typeof actor.height === 'string' && actor.height.trim().length > 0
+    const hasEye = typeof actor.eye_color === 'string' && actor.eye_color.trim().length > 0
+    const hasHair = typeof actor.hair_color === 'string' && actor.hair_color.trim().length > 0
+    const hasSkills = Array.isArray(skillsArray) && skillsArray.length > 0
+    const hasHeadshot = Array.isArray(media.headshots) && media.headshots.length > 0
+    const galleryImages = (media.other || []).filter((m) => typeof m.mime_type === 'string' && m.mime_type.startsWith('image/'))
+    const hasGallery = galleryImages.length > 0
+    const checklist = [hasBio, hasLocation, hasHeight, hasEye, hasHair, hasSkills, hasHeadshot, hasGallery]
+    const met = checklist.reduce((acc, v) => acc + (v ? 1 : 0), 0)
+    const profileCompletion = Math.max(0, Math.min(100, Math.round((met / checklist.length) * 100)))
+
+    // Read preferences from profile metadata if available
+    let preferences: any = {}
+    try {
+      const metaRaw = (actor as any).profile_metadata
+      if (metaRaw) {
+        const metaObj = typeof metaRaw === 'string' ? JSON.parse(metaRaw) : metaRaw
+        if (metaObj && typeof metaObj === 'object') {
+          preferences.hideProfileCompletion = Boolean(metaObj?.preferences?.hideProfileCompletion)
+        }
+      }
+    } catch {}
+
+    // Build response
+    const responseBody = {
       id: actor.id,
       email: actor.email,
       name: actor.name,
       role: actor.role,
-      avatar_url: avatarFromDmapi || legacyAvatar,
+      avatar_url: legacyAvatar || avatarFromDmapi,
       bio: actor.bio,
       skills: skillsArray,
       height: actor.height,
       eye_color: actor.eye_color,
       hair_color: actor.hair_color,
-      profile_image: resolveWebAvatarUrl(actor.profile_image, actor.name),
+      profile_image: resolveWebAvatarUrl(legacyAvatar, actor.name),
       resume_url: actor.resume_url,
       location: actor.location || 'Los Angeles',
       media,
-      profile_completion: actor.bio ? 75 : 25,
+      profile_completion: profileCompletion,
+      preferences,
       created_at: actor.created_at,
       updated_at: actor.updated_at,
-    })
+    }
+
+    // Cache small window for speed unless includePrivate requested
+    if (!includePrivate) {
+      const now = Date.now()
+      cache.set(cacheKey, { body: responseBody, expires: now + CACHE_TTL_MS })
+    }
+    {
+      const hdrs = new Headers()
+      hdrs.set('Cache-Control', includeMedia ? 'private, max-age=20' : (includePrivate ? 'private, max-age=10' : 'private, max-age=60'))
+      hdrs.set('Vary', 'Authorization')
+      return NextResponse.json(responseBody, { headers: hdrs })
+    }
   } catch (error) {
     console.error('Error fetching actor:', error)
     return NextResponse.json(

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { motion, HTMLMotionProps } from 'framer-motion'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center rounded-lg font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]',
+  'inline-flex items-center justify-center rounded-lg font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] text-center whitespace-normal break-words',
   {
     variants: {
       variant: {
@@ -18,10 +18,10 @@ const buttonVariants = cva(
         link: 'text-primary-600 underline-offset-4 hover:underline',
       },
       size: {
-        sm: 'h-9 px-3 text-sm',
-        md: 'h-11 px-4 text-base',
-        lg: 'h-12 px-6 text-base',
-        xl: 'h-14 px-8 text-lg',
+        sm: 'min-h-[36px] px-3 py-2 text-sm',
+        md: 'min-h-[44px] px-4 py-2 text-base',
+        lg: 'min-h-[48px] px-6 py-3 text-base',
+        xl: 'min-h-[56px] px-8 py-3 text-lg',
         icon: 'h-10 w-10',
         // Mobile-optimized touch size
         touch: 'min-h-[44px] px-6 py-3 text-base',

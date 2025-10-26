@@ -1,5 +1,6 @@
 'use client'
 
+import * as React from 'react'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
@@ -20,7 +21,7 @@ import { AppLayout, PageHeader, PageContent } from '@/components/layouts/app-lay
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar } from '@/components/ui/avatar'
+import { ProfileAvatar } from '@/components/ui/avatar'
 import useAuthStore from '@/lib/store/auth-store'
 import { useActorProfile } from '@/lib/hooks/useActorData'
 
@@ -81,8 +82,55 @@ const recentSubmissions = [
 
 export default function ActorDashboard() {
   const router = useRouter()
-  const { user } = useAuthStore()
+  const { user, token } = useAuthStore()
   const { profile, loading, error } = useActorProfile(user?.id)
+  const [localAvatar, setLocalAvatar] = React.useState<string | null>(null)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const [hideCompletion, setHideCompletion] = React.useState<boolean>(false)
+
+  useEffect(() => {
+    if (profile?.preferences?.hideProfileCompletion) {
+      setHideCompletion(true)
+    }
+  }, [profile?.preferences?.hideProfileCompletion])
+
+  const handleAvatarUpload = async (file: File) => {
+    try {
+      if (!user?.id || !token) return
+      const actorIdForPatch = profile?.id
+      if (!actorIdForPatch) return
+      // Optimistic preview
+      const preview = URL.createObjectURL(file)
+      setLocalAvatar(preview)
+      const form = new FormData()
+      form.append('file', file)
+      form.append('title', file.name)
+      form.append('category', 'headshot')
+      const res = await fetch(`/api/media/actor/${encodeURIComponent(String(user.id))}/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      })
+      if (!res.ok) throw new Error('Upload failed')
+      const j = await res.json().catch(() => ({}))
+      const first = Array.isArray(j?.file) ? j.file[0] : j?.file || {}
+      const url = first?.signed_url || first?.public_url || first?.url || first?.proxy_url || null
+      if (url) {
+        // Persist avatar_url
+        await fetch(`/api/actors/${encodeURIComponent(String(actorIdForPatch))}/profile`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ profile_image: url }),
+        })
+      }
+    } catch (e) {
+      // Reset optimistic preview on failure
+      setLocalAvatar(null)
+    }
+  }
   
   useEffect(() => {
     if (!user || user.role !== 'actor') {
@@ -124,6 +172,20 @@ export default function ActorDashboard() {
   }
   
   const profileCompletion = profile.profile_completion || 0
+  const dismissCompletion = async () => {
+    try {
+      if (!user?.id) return
+      await fetch(`/api/actors/${encodeURIComponent(String(user.id))}/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(useAuthStore.getState().token ? { Authorization: `Bearer ${useAuthStore.getState().token}` } : {}),
+        },
+        body: JSON.stringify({ preferences: { hideProfileCompletion: true } }),
+      })
+      setHideCompletion(true)
+    } catch {}
+  }
   
   return (
     <AppLayout>
@@ -142,7 +204,7 @@ export default function ActorDashboard() {
       
       <PageContent>
         {/* Profile completion alert */}
-        {profileCompletion < 100 && (
+        {profileCompletion < 100 && !hideCompletion && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -150,25 +212,29 @@ export default function ActorDashboard() {
           >
             <Card className="bg-gradient-to-r from-purple-50 to-teal-50 border-purple-200">
               <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-purple-600" />
                     <div>
-                      <p className="font-medium text-gray-900">
+                      <p className="font-medium text-gray-900 text-sm sm:text-base">
                         Your profile is {profileCompletion}% complete
                       </p>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-xs sm:text-sm text-gray-600">
                         Complete your profile to increase your chances of being cast
                       </p>
                     </div>
                   </div>
-                  <Button
-                    onClick={() => router.push('/actor/profile')}
-                    size="sm"
-                    variant="default"
-                  >
-                    Complete Now
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => router.push('/actor/profile')}
+                      size="sm"
+                      variant="default"
+                      className="whitespace-nowrap"
+                    >
+                      Complete Now
+                    </Button>
+                    <Button onClick={dismissCompletion} size="sm" variant="ghost" className="whitespace-nowrap">Hide</Button>
+                  </div>
                 </div>
                 <div className="mt-3 w-full bg-white rounded-full h-2">
                   <div 
@@ -198,24 +264,14 @@ export default function ActorDashboard() {
               <div className="flex flex-col md:flex-row gap-6">
                 {/* Profile Photo */}
                 <div className="flex-shrink-0">
-                  <div className="relative">
-                    {profile.avatar_url ? (
-                      <img
-                        src={profile.avatar_url}
-                        alt={profile.name}
-                        className="w-32 h-32 rounded-lg object-cover border-2 border-gray-200"
-                        onError={(e) => {
-                          // Fallback to generated avatar
-                          e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&background=9C27B0&color=fff&size=128`;
-                        }}
-                      />
-                    ) : (
-                      <Avatar size="xl" alt={profile.name} fallback={profile.name} />
-                    )}
-                    <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-white rounded-full flex items-center justify-center border-2 border-gray-200">
-                      <Camera className="w-4 h-4 text-gray-600" />
-                    </div>
-                  </div>
+                  <ProfileAvatar
+                    editable
+                    size="xl"
+                    alt={profile.name}
+                    src={localAvatar || profile.avatar_url || undefined}
+                    fallback={profile.name}
+                    onUpload={handleAvatarUpload}
+                  />
                 </div>
                 
                 {/* Profile Info */}
@@ -404,32 +460,34 @@ export default function ActorDashboard() {
                   {upcomingAuditions.map((audition) => (
                     <div
                       key={audition.id}
-                      className="flex items-start gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                      className="flex items-start gap-3 sm:gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                     >
                       <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
                         <Calendar className="w-5 h-5 text-primary-600" />
                       </div>
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="font-medium">{audition.project}</p>
-                            <p className="text-sm text-gray-600">{audition.role}</p>
-                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                              <span className="flex items-center gap-1">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm sm:text-base truncate">{audition.project}</p>
+                            <p className="text-xs sm:text-sm text-gray-600 truncate">{audition.role}</p>
+                            <div className="flex items-center gap-2 mt-1 text-[11px] sm:text-xs text-gray-500">
+                              <span className="flex items-center gap-1 truncate">
                                 <Clock className="w-3 h-3" />
                                 {audition.date.toLocaleDateString()} at {audition.time}
                               </span>
-                              <Badge variant={audition.type === 'Self-Tape' ? 'secondary' : 'default'} size="sm">
-                                {audition.type}
-                              </Badge>
                             </div>
                           </div>
-                          <Badge
-                            variant={audition.status === 'confirmed' ? 'success' : 'warning'}
-                            size="sm"
-                          >
-                            {audition.status}
-                          </Badge>
+                          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                            <Badge variant={audition.type === 'Self-Tape' ? 'secondary' : 'default'} size="sm">
+                              {audition.type}
+                            </Badge>
+                            <Badge
+                              variant={audition.status === 'confirmed' ? 'success' : 'warning'}
+                              size="sm"
+                            >
+                              {audition.status}
+                            </Badge>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -465,12 +523,12 @@ export default function ActorDashboard() {
                   {recentSubmissions.map((submission) => (
                     <div
                       key={submission.id}
-                      className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                      className="flex items-center gap-3 sm:gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                     >
-                      <div className="flex-1">
-                        <p className="font-medium">{submission.project}</p>
-                        <p className="text-sm text-gray-600">{submission.role}</p>
-                        <p className="text-xs text-gray-500 mt-1">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm sm:text-base truncate">{submission.project}</p>
+                        <p className="text-xs sm:text-sm text-gray-600 truncate">{submission.role}</p>
+                        <p className="text-[11px] sm:text-xs text-gray-500 mt-1 truncate">
                           Submitted {submission.submittedAt.toLocaleDateString()}
                         </p>
                       </div>
@@ -480,6 +538,7 @@ export default function ActorDashboard() {
                           submission.status === 'viewed' ? 'secondary' :
                           'outline'
                         }
+                        size="sm"
                       >
                         {submission.status}
                       </Badge>
@@ -526,14 +585,7 @@ export default function ActorDashboard() {
               <Star className="w-6 h-6 mb-2" />
               <span>Update Profile</span>
             </Button>
-            <Button
-              onClick={() => router.push('/actor/media')}
-              variant="outline"
-              className="h-auto flex-col py-4"
-            >
-              <Video className="w-6 h-6 mb-2" />
-              <span>Upload Media</span>
-            </Button>
+            {/* Removed Upload Media shortcut; uploads are inline via camera icon/profile */}
             <Button
               onClick={() => router.push('/messages')}
               variant="outline"

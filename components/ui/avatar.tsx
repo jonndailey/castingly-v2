@@ -30,6 +30,9 @@ const AvatarImage = React.forwardRef<
   <AvatarPrimitive.Image
     ref={ref}
     className={cn('aspect-square h-full w-full object-cover', className)}
+    loading="lazy"
+    decoding="async"
+    fetchPriority="low"
     {...props}
   />
 ))
@@ -188,11 +191,11 @@ const ProfileAvatar: React.FC<ProfileAvatarProps> = ({
         <>
           <button
             onClick={handleClick}
-            className="absolute bottom-0 right-0 rounded-full bg-primary-600 p-2 text-white shadow-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+            className="absolute bottom-1 right-1 sm:bottom-0 sm:right-0 rounded-full bg-primary-600 p-1.5 sm:p-2 text-white shadow-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
             aria-label="Change avatar"
           >
             <svg
-              className="h-4 w-4"
+              className="h-3 w-3 sm:h-4 sm:w-4"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"

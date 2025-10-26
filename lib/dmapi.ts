@@ -105,6 +105,7 @@ export async function validateUserToken(
 
 export type MediaCategory =
   | 'headshot'
+  | 'gallery'
   | 'resume'
   | 'reel'
   | 'self_tape'
@@ -127,6 +128,12 @@ export function resolveStorageLocation(
       return {
         bucketId: 'castingly-public',
         folderPath: `actors/${userId}/headshots`,
+        access: 'public',
+      }
+    case 'gallery':
+      return {
+        bucketId: 'castingly-public',
+        folderPath: `actors/${userId}/gallery`,
         access: 'public',
       }
     case 'reel':
@@ -169,10 +176,19 @@ export function resolveStorageLocation(
   }
 }
 
-export async function listFiles(token: string, params?: { limit?: number; offset?: number }) {
+export async function listFiles(
+  token: string,
+  params?: { limit?: number; offset?: number; metadata?: Record<string, string | number | boolean> }
+) {
   const query = new URLSearchParams()
   if (params?.limit) query.set('limit', params.limit.toString())
   if (params?.offset) query.set('offset', params.offset.toString())
+  if (params?.metadata) {
+    for (const [k, v] of Object.entries(params.metadata)) {
+      if (v === undefined || v === null) continue
+      query.append(`metadata[${k}]`, String(v))
+    }
+  }
 
   const data = (await dmapiFetch(`/api/files?${query.toString()}`, {
     method: 'GET',

@@ -533,8 +533,8 @@ export const forumReplies = {
       `SELECT 
         fr.*,
         u.id as author_id,
-        CONCAT(u.first_name, ' ', u.last_name) as author_name,
-        u.profile_image as author_avatar_url,
+        u.name as author_name,
+        u.avatar_url as author_avatar_url,
         u.forum_display_name as author_forum_display_name,
         u.forum_signature as author_forum_signature,
         u.role as author_role
@@ -553,8 +553,8 @@ export const forumReplies = {
         fr.*,
         fp.title as post_title,
         u.id as author_id,
-        CONCAT(u.first_name, ' ', u.last_name) as author_name,
-        u.profile_image as author_avatar_url,
+        u.name as author_name,
+        u.avatar_url as author_avatar_url,
         u.forum_display_name as author_forum_display_name,
         u.forum_signature as author_forum_signature,
         u.role as author_role

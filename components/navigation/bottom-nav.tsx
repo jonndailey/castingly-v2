@@ -46,11 +46,6 @@ const actorNavItems: NavItem[] = [
     icon: <Search className="w-5 h-5" />,
   },
   {
-    label: 'Submit',
-    href: '/actor/submit',
-    icon: <PlusCircle className="w-5 h-5" />,
-  },
-  {
     label: 'Forum',
     href: '/forum',
     icon: <MessageSquare className="w-5 h-5" />,
@@ -163,8 +158,7 @@ const adminNavItems: NavItem[] = [
 
 export const BottomNav: React.FC = () => {
   const pathname = usePathname()
-  const { user } = useAuthStore()
-  const [avatarSrc, setAvatarSrc] = useState<string | null>(null)
+  const { user, token } = useAuthStore()
   
   // Get navigation items based on user role
   const getNavItems = () => {
@@ -188,30 +182,7 @@ export const BottomNav: React.FC = () => {
   
   const navItems = getNavItems()
 
-  // Resolve a richer avatar for actors (prefer DMAPI headshot or legacy profile_image)
-  useEffect(() => {
-    let cancelled = false
-    async function loadAvatar() {
-      if (!user) return
-      // Default to store avatar
-      let src: string | null = user.avatar_url || null
-      if (user.role === 'actor') {
-        try {
-          const res = await fetch(`/api/actors/${encodeURIComponent(user.id)}`)
-          if (res.ok) {
-            const data = await res.json()
-            const hs = Array.isArray(data?.media?.headshots) ? data.media.headshots : []
-            const first = hs[0]
-            const dmapiUrl = first?.public_url || first?.url || first?.signed_url || first?.thumbnail_url || null
-            src = dmapiUrl || data?.profile_image || src
-          }
-        } catch {}
-      }
-      if (!cancelled) setAvatarSrc(src)
-    }
-    loadAvatar()
-    return () => { cancelled = true }
-  }, [user?.id, user?.role, user?.avatar_url])
+  // No extra fetch here; avatar is served via /api/media/avatar/:id
   
   // Don't show on non-authenticated pages or admin pages (admin has its own nav)
   if (!user || pathname === '/login' || pathname === '/register' || pathname === '/' || pathname.startsWith('/admin')) {
@@ -229,18 +200,12 @@ export const BottomNav: React.FC = () => {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-col items-center justify-center min-h-[56px] rounded-lg transition-colors relative',
+                'flex flex-col items-center justify-center min-h-[56px] rounded-lg transition-colors relative overflow-visible',
                 'text-gray-600 hover:text-primary-600 hover:bg-primary-50',
                 isActive && 'text-primary-600 bg-primary-50'
               )}
             >
-              {isActive && (
-                <motion.div
-                  layoutId="bottomNavIndicator"
-                  className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-primary-600 rounded-full"
-                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                />
-              )}
+              {/* Removed the top indicator line on active; highlight state is sufficient */}
               
               <div className="relative">
                 {item.icon}
@@ -261,8 +226,7 @@ export const BottomNav: React.FC = () => {
 // Desktop sidebar navigation
 export const SideNav: React.FC = () => {
   const pathname = usePathname()
-  const { user, devMode, switchRole, logout, authSource } = useAuthStore()
-  const [avatarSrc, setAvatarSrc] = useState<string | null>(null)
+  const { user, token, devMode, switchRole, logout, authSource } = useAuthStore()
   
   const getNavItems = () => {
     if (!user) return []
@@ -285,29 +249,7 @@ export const SideNav: React.FC = () => {
   
   const navItems = getNavItems()
 
-  // Resolve richer avatar for sidebar as well
-  useEffect(() => {
-    let cancelled = false
-    async function loadAvatar() {
-      if (!user) return
-      let src: string | null = user.avatar_url || null
-      if (user.role === 'actor') {
-        try {
-          const res = await fetch(`/api/actors/${encodeURIComponent(user.id)}`)
-          if (res.ok) {
-            const data = await res.json()
-            const hs = Array.isArray(data?.media?.headshots) ? data.media.headshots : []
-            const first = hs[0]
-            const dmapiUrl = first?.public_url || first?.url || first?.signed_url || first?.thumbnail_url || null
-            src = dmapiUrl || data?.profile_image || src
-          }
-        } catch {}
-      }
-      if (!cancelled) setAvatarSrc(src)
-    }
-    loadAvatar()
-    return () => { cancelled = true }
-  }, [user?.id, user?.role, user?.avatar_url])
+  // No extra fetch here; avatar is served via /api/media/avatar/:id
   
   // Don't show sidebar on non-authenticated pages or admin pages (admin has its own nav)
   if (!user || pathname === '/login' || pathname === '/register' || pathname === '/' || pathname.startsWith('/admin')) {
@@ -319,16 +261,6 @@ export const SideNav: React.FC = () => {
       <div className="flex flex-col w-64 min-h-full">
         <div className="flex flex-col flex-grow bg-white border-r border-gray-200 pt-5 pb-4 overflow-y-auto min-h-full">
         <div className="flex items-center flex-shrink-0 px-4">
-            {/* Show user avatar in header to avoid confusing Core branding */}
-            {user ? (
-              <img
-                src={avatarSrc || user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`}
-                alt={user.name}
-                className="w-8 h-8 rounded-full mr-3 object-cover"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-full mr-3 bg-gradient-to-br from-purple-200 to-teal-200" />
-            )}
             <h1 className="text-2xl font-heading font-bold gradient-text">Castingly</h1>
           </div>
           
@@ -452,8 +384,15 @@ export const SideNav: React.FC = () => {
                 <div>
                   <img
                     className="inline-block h-9 w-9 rounded-full"
-                    src={avatarSrc || user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`}
+                    src={`/api/media/avatar/${encodeURIComponent(user.id)}`}
                     alt={user.name}
+                    decoding="async"
+                    onError={(e) => {
+                      const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`
+                      if ((e.currentTarget as HTMLImageElement).src !== fallback) {
+                        ;(e.currentTarget as HTMLImageElement).src = fallback
+                      }
+                    }}
                   />
                 </div>
                 <div className="ml-3">

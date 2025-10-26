@@ -49,7 +49,7 @@ export interface DaileyCoreValidateResponse {
 
 class DaileyCoreAuthClient {
   private baseUrl: string;
-  private clientId: string;
+  private clientId?: string;
   private clientSecret?: string;
   private appSlug: string;
   private tenantSlug?: string;

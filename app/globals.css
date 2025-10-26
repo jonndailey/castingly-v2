@@ -92,6 +92,10 @@
 
 /* Base Styles */
 @layer base {
+  img {
+    max-width: 100%;
+    height: auto;
+  }
   * {
     @apply border-gray-200;
   }

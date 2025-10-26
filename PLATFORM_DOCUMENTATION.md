@@ -248,15 +248,26 @@ Castingly v2 is a comprehensive casting management platform built with Next.js 1
 ## Responsive Design
 
 ### Mobile-First Approach
-- Tailwind CSS responsive utilities throughout
-- Optimized mobile experiences for all user roles
-- Touch-friendly interface elements
+- Tailwind responsive utilities throughout
+- Buttons/tabs remain readable on small screens; labels wrap if needed while keeping tap targets ≥44px
+- BottomNav uses highlight only for active items (no top underline)
+- Share/copy blocks use copyable inputs; actions stack and become full-width on mobile
+- Compact, non-wrapping filter tabs with horizontal scroll for dense sets
 
 ### Breakpoint Strategy
-- `sm`: 640px+ (mobile landscape, small tablets)
-- `md`: 768px+ (tablets)
-- `lg`: 1024px+ (desktops)
-- `xl`: 1280px+ (large desktops)
+- `sm`: 640px+
+- `md`: 768px+
+- `lg`: 1024px+
+- `xl`: 1280px+
+
+### Profile Completion
+- Calculated from profile fields (bio, location, height, eyes, hair, skills) + media (≥1 headshot and ≥1 gallery image)
+- Exposed as `profile_completion` in GET `/api/actors/:id`
+- Dismissible via `preferences.hideProfileCompletion` (PATCH `/api/actors/:id/profile`)
+
+### Media & Performance
+- `/api/media/proxy` issues 302 redirects to signed/serve URLs with variant-insensitive matching
+- Short DMAPI timeouts to avoid stalls; longer cache for proxy and avatar redirects
 
 ## Performance Considerations
 

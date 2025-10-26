@@ -36,6 +36,9 @@ export interface ActorProfile {
   twitter?: string | null
   profile_completion?: number
   resume_url?: string | null
+  preferences?: {
+    hideProfileCompletion?: boolean
+  }
   media?: {
     headshots: ActorMediaEntry[]
     resumes: ActorMediaEntry[]
@@ -48,7 +51,7 @@ export interface ActorProfile {
   }
 }
 
-export function useActorProfile(actorId?: string) {
+export function useActorProfile(actorId?: string, options?: { includeMedia?: boolean }) {
   const { user, token } = useAuthStore()
   const [profile, setProfile] = useState<ActorProfile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -65,7 +68,9 @@ export function useActorProfile(actorId?: string) {
           return
         }
 
-        const response = await fetch(`/api/actors/${id}`, {
+        const qs = new URLSearchParams()
+        if (options?.includeMedia) qs.set('media', '1')
+        const response = await fetch(`/api/actors/${id}?${qs.toString()}`, {
           headers: token
             ? {
                 Authorization: `Bearer ${token}`,
@@ -92,6 +97,41 @@ export function useActorProfile(actorId?: string) {
   }, [actorId, token, user?.id])
 
   return { profile, loading, error }
+}
+
+export function useActorMedia(actorId?: string) {
+  const { user, token } = useAuthStore()
+  const [media, setMedia] = useState<ActorProfile['media'] | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        setLoading(true)
+        const id = actorId || user?.id
+        if (!id) {
+          setError('No actor ID provided')
+          return
+        }
+        const response = await fetch(`/api/actors/${id}?media=1`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        })
+        if (!response.ok) throw new Error('Failed to fetch media')
+        const data = await response.json()
+        setMedia(data?.media ?? null)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load media')
+      } finally {
+        setLoading(false)
+      }
+    }
+    run()
+  }, [actorId, token, user?.id, tick])
+
+  const reload = () => setTick((v) => v + 1)
+  return { media, loading, error, reload }
 }
 
 export function useActors(params?: { 

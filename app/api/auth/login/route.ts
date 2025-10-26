@@ -37,7 +37,14 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      const castinglyUser = daileyCoreAuth.mapToCastinglyUser(coreAuthResult.user)
+      let castinglyUser = daileyCoreAuth.mapToCastinglyUser(coreAuthResult.user)
+      // If our local DB defines a more specific role for this email, prefer it
+      try {
+        const local = await auth.findByEmail(email)
+        if (local && local.role && local.role !== castinglyUser.role) {
+          castinglyUser = { ...castinglyUser, role: local.role }
+        }
+      } catch {}
       console.log('✅ Dailey Core authentication successful for:', email)
 
       return NextResponse.json({

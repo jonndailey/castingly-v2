@@ -298,8 +298,8 @@ export default function ActorOpportunities() {
                   <div className="flex flex-col md:flex-row gap-4">
                     {/* Main Content */}
                     <div className="flex-1">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
+                      <div className="flex items-start justify-between mb-3 gap-3">
+                        <div className="min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <Badge className={getTypeColor(opp.type)}>
                               <span className="flex items-center gap-1">
@@ -317,10 +317,10 @@ export default function ActorOpportunities() {
                               <Badge variant="secondary">Applied</Badge>
                             )}
                           </div>
-                          <h3 className="text-xl font-heading font-semibold">
+                          <h3 className="font-heading font-semibold text-base sm:text-xl truncate">
                             {opp.title}
                           </h3>
-                          <p className="text-gray-600">
+                          <p className="text-gray-600 text-sm truncate">
                             {opp.project} • Role: {opp.role}
                           </p>
                         </div>
@@ -335,7 +335,7 @@ export default function ActorOpportunities() {
                         </button>
                       </div>
                       
-                      <p className="text-gray-600 mb-4 line-clamp-2">
+                      <p className="text-gray-600 text-sm sm:text-base mb-4 line-clamp-2">
                         {opp.description}
                       </p>
                       
@@ -358,21 +358,21 @@ export default function ActorOpportunities() {
                         </div>
                       </div>
                       
-                      <div className="flex items-center justify-between">
-                        <div className="flex gap-2">
-                          <Badge variant="outline">
+                      <div className="flex items-start justify-between">
+                        <span className="text-xs sm:text-sm text-gray-500">
+                          {opp.submissions} submissions
+                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge variant="outline" size="sm">
                             {opp.requirements.ageRange} years
                           </Badge>
-                          <Badge variant="outline">
+                          <Badge variant="outline" size="sm">
                             {opp.requirements.gender}
                           </Badge>
-                          <Badge variant="outline">
+                          <Badge variant="outline" size="sm">
                             {opp.requirements.union}
                           </Badge>
                         </div>
-                        <span className="text-sm text-gray-500">
-                          {opp.submissions} submissions
-                        </span>
                       </div>
                     </div>
                     

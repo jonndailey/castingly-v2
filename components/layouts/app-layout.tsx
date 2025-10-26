@@ -18,7 +18,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, className }) => 
         
         {/* Main content */}
         <main className={cn(
-          'flex-1 pb-20 md:pb-0 min-h-screen', // Padding bottom for mobile nav, min-height for proper layout
+          // Padding bottom for mobile nav, safe areas, prevent horizontal scroll, wrap long words
+          'flex-1 pb-24 md:pb-0 min-h-screen safe-bottom overflow-x-hidden break-words',
           className
         )}>
           {children}
@@ -45,18 +46,18 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
 }) => {
   return (
     <div className="bg-white shadow-sm border-b border-gray-200">
-      <div className="px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-heading font-bold text-gray-900">
+      <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-heading font-bold text-gray-900 truncate">
               {title}
             </h1>
             {subtitle && (
-              <p className="mt-1 text-sm text-gray-600">{subtitle}</p>
+              <p className="mt-0.5 text-sm text-gray-600 truncate">{subtitle}</p>
             )}
           </div>
           {actions && (
-            <div className="flex items-center gap-3">{actions}</div>
+            <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">{actions}</div>
           )}
         </div>
       </div>
@@ -76,8 +77,7 @@ export const PageContent: React.FC<PageContentProps> = ({
 }) => {
   return (
     <div className={cn(
-      'px-4 sm:px-6 lg:px-8 py-6',
-      'max-w-7xl mx-auto',
+      'container-mobile py-5 sm:py-6',
       className
     )}>
       {children}

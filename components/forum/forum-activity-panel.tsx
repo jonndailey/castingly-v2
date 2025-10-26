@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import { MessageCircle, MessageSquareText, Loader2 } from 'lucide-react'
@@ -21,34 +21,54 @@ export function ForumActivityPanel({ userId, className }: ForumActivityPanelProp
   const { user } = useAuthStore()
   const [posts, setPosts] = useState<ForumPost[]>([])
   const [replies, setReplies] = useState<ForumReply[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const [hasLoaded, setHasLoaded] = useState(false)
 
   useEffect(() => {
-    if (!user) return
-
-    const load = async () => {
+    if (!user || hasLoaded) return
+    let cancelled = false
+    const fetchData = async () => {
       try {
         setLoading(true)
         const data = await forumClient.getActivity(user, userId, 5)
+        if (cancelled) return
         setPosts(data.posts)
         setReplies(data.replies)
+        setHasLoaded(true)
       } catch (activityError: any) {
+        if (cancelled) return
         setError(activityError.message || 'Unable to load forum activity.')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
-    load()
-  }, [user, userId])
+    // If small screen, defer until visible for better TTI
+    const prefersDefer = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 640px)').matches
+    if (prefersDefer && rootRef.current && 'IntersectionObserver' in window) {
+      const observer = new IntersectionObserver((entries) => {
+        const entry = entries[0]
+        if (entry && entry.isIntersecting) {
+          observer.disconnect()
+          fetchData()
+        }
+      }, { rootMargin: '100px' })
+      observer.observe(rootRef.current)
+      return () => { cancelled = true; observer.disconnect() }
+    }
+
+    fetchData()
+    return () => { cancelled = true }
+  }, [user, userId, hasLoaded])
 
   if (!user) {
     return null
   }
 
   return (
-    <Card className={cn('border border-gray-100 shadow-sm', className)}>
+    <Card ref={rootRef} className={cn('border border-gray-100 shadow-sm', className)}>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-lg font-semibold flex items-center gap-2">
           <MessageCircle className="w-5 h-5 text-purple-500" />

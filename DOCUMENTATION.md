@@ -2,12 +2,12 @@
 
 ## 🎬 Project Overview
 
-Castingly is a professional casting platform that connects actors, agents, and casting directors in a seamless, modern interface. Built with Next.js 14, TypeScript, and Tailwind CSS, it provides a mobile-first experience with beautiful animations and thoughtful UX.
+Castingly is a professional casting platform that connects actors, agents, and casting directors in a seamless, modern interface. Built with Next.js 15, TypeScript, and Tailwind CSS, it provides a mobile-first experience with thoughtful UX and animations.
 
 ## 🏗️ Architecture
 
 ### Tech Stack
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 15 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS v3 + CSS Custom Properties
 - **State Management**: Zustand with persistence
@@ -126,7 +126,7 @@ castingly-v2/
 - Role-based route protection
 - Development mode for role switching
 
-## 📱 Key Components
+## 📱 Key Components (Mobile-first)
 
 ### Layout Components
 - **AppLayout**: Main application wrapper with navigation
@@ -143,7 +143,7 @@ castingly-v2/
 ### Specialized Components
 - **VideoReview**: Swipe-based video review for casting directors
 - **VideoUpload**: Drag-and-drop or link video uploads
-- **BottomNav**: Mobile navigation bar
+- **BottomNav**: Mobile navigation bar (active underline removed; highlight state only)
 - **SideNav**: Desktop sidebar navigation
 
 ## 🚀 Features
@@ -152,9 +152,9 @@ castingly-v2/
 - ✅ Beautiful, responsive UI
 - ✅ Role-based dashboards
 - ✅ Video upload and review system
-- ✅ Mobile-first design
+- ✅ Mobile-first design (buttons/tabs readable on small screens; no horizontal scrolling)
 - ✅ Demo authentication
-- ✅ Profile completion tracking
+- ✅ Profile completion tracking (real; can be hidden per user preference)
 - ✅ Submission tracking
 
 ### Planned Features
@@ -184,20 +184,24 @@ npm run build
 npm start
 ```
 
-### Environment Variables
+### Environment Variables (production highlights)
 ```env
-# Database (planned)
-DATABASE_URL=postgresql://...
+# Database (cluster)
+DB_HOST=127.0.0.1
+DB_PORT=3307
+DB_NAME=castingly
+DB_USER=castingly_app
+DB_PASSWORD=********
 
-# Authentication (planned)
-JWT_SECRET=...
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=...
+# Dailey Core + DMAPI
+DAILEY_CORE_AUTH_URL=https://core.dailey.cloud
+DMAPI_BASE_URL=https://media.dailey.cloud
+DMAPI_APP_ID=castingly
+DMAPI_SERVICE_EMAIL=dmapi-service@castingly.com
+DMAPI_SERVICE_PASSWORD=********
 
-# Storage (planned)
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-AWS_BUCKET_NAME=...
+# App port behind Apache
+PORT=3003
 ```
 
 ## 📄 API Structure (Planned)

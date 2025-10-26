@@ -12,12 +12,17 @@ export async function GET(request: NextRequest) {
     
     let actorList;
     
-    if (search) {
-      actorList = await actors.search(search);
-    } else if (location) {
-      actorList = await actors.search(location);
-    } else {
-      actorList = await actors.getAll(limit, offset);
+    try {
+      if (search) {
+        actorList = await actors.search(search);
+      } else if (location) {
+        actorList = await actors.search(location);
+      } else {
+        actorList = await actors.getAll(limit, offset);
+      }
+    } catch (e) {
+      console.warn('[actors] DB list failed; returning empty list:', (e as any)?.message || e)
+      actorList = []
     }
     // Sanitize avatar URLs to avoid local filesystem paths
     const safeActors = (actorList as any[]).map((a: any) => ({
@@ -26,7 +31,12 @@ export async function GET(request: NextRequest) {
     }));
 
     // Get total count for pagination
-    const totalCount = await actors.getCount();
+    let totalCount = 0
+    try {
+      totalCount = await actors.getCount();
+    } catch {
+      totalCount = Array.isArray(actorList) ? actorList.length : 0
+    }
     
     return NextResponse.json({
       actors: safeActors,
@@ -36,9 +46,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error fetching actors:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch actors' },
-      { status: 500 }
-    );
+    // Return a safe empty response to avoid breaking the UI on transient failures
+    return NextResponse.json({ actors: [], total: 0, limit: 0, offset: 0 });
   }
 }

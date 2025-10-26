@@ -19,7 +19,8 @@ module.exports = {
       env_file: '.env.production',
       env: {
         NODE_ENV: 'production',
-        PORT: 3000,
+        // Match Apache upstream (proxy) port; .env.production also uses 3003
+        PORT: 3003,
       },
       watch: false,
       max_restarts: 10,

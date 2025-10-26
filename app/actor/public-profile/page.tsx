@@ -184,7 +184,7 @@ export default function PublicProfileConfigPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Custom Profile URL
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <div className="flex-grow">
                     <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
                       <span className="px-3 py-2 bg-gray-50 text-gray-500 text-sm">
@@ -212,7 +212,7 @@ export default function PublicProfileConfigPage() {
                   </div>
                   <button
                     onClick={handleCopyLink}
-                    className="btn-touch bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    className="btn-touch bg-gray-100 text-gray-700 hover:bg-gray-200 w-full sm:w-auto"
                   >
                     {copied ? (
                       <>
@@ -228,7 +228,7 @@ export default function PublicProfileConfigPage() {
                   </button>
                   <button
                     onClick={() => window.open(`/talent/${profileUrl}`, '_blank')}
-                    className="btn-touch bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    className="btn-touch bg-gray-100 text-gray-700 hover:bg-gray-200 w-full sm:w-auto"
                   >
                     <ExternalLink className="w-4 h-4 mr-2" />
                     Preview
