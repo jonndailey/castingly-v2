@@ -225,7 +225,7 @@ export async function GET(
 
     let media: CategorisedMedia
     if (includeMedia && dmapiFiles.length > 0) {
-      const categorised = categoriseDmapiFiles(dmapiFiles)
+      const categorised = categoriseDmapiFiles(dmapiFiles, String(actor.id))
       media = includePrivate
         ? categorised
         : filterToPublicMedia(categorised)
@@ -371,7 +371,7 @@ function matchesActor(file: DmapiFile, actor: any) {
   return matchesLegacyId || matchesEmail || matchesFolder || !metadata.sourceActorId
 }
 
-function categoriseDmapiFiles(files: DmapiFile[]): CategorisedMedia {
+function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): CategorisedMedia {
   const initial: CategorisedMedia = {
     headshots: [],
     resumes: [],
@@ -400,11 +400,22 @@ function categoriseDmapiFiles(files: DmapiFile[]): CategorisedMedia {
       ((metaCat && metaCat !== 'other' && metaCat !== 'image') ? metaCat : null) ||
       mimeCat
 
+    // Prefer our proxy URL so we can robustly resolve and redirect
+    const bucketId = String((metadata.bucketId || (metadata as any).bucket_id || '') || '').trim()
+    const folderPath = String((metadata.folderPath || (metadata as any).folder_path || '') || '').trim()
+    const name = String(file.original_filename || '').trim()
+    const proxyUrl = bucketId && actorId && name
+      ? `/api/media/proxy?bucket=${encodeURIComponent(bucketId)}&userId=${encodeURIComponent(String(actorId))}` +
+        (folderPath ? `&path=${encodeURIComponent(folderPath)}` : '') +
+        `&name=${encodeURIComponent(name)}`
+      : null
+
     const simplified: SimplifiedMedia = {
       id: file.id,
-      url: file.public_url || null,
+      url: proxyUrl || file.public_url || null,
       signed_url: file.signed_url || null,
       thumbnail_url:
+        proxyUrl ||
         file.thumbnail_url ||
         file.thumbnail_signed_url ||
         file.public_url ||
