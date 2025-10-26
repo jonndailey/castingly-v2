@@ -387,6 +387,54 @@ pm2 start ecosystem.production.cjs --env production
 pm2 save
 ```
 
+## 🖧 Servers & Access (Ops Notes)
+
+This repo is developed and deployed from the dev workstation (“king”), with a remote app server (“dev”) and a separate database cluster.
+
+- Dev Workstation “king” (you are here)
+  - Code: `/home/jonny/apps/castingly-v2`
+  - Local MySQL (for development):
+    - Host: `127.0.0.1`, Port: `3306`
+    - User: `nikon`, Password: `@0509man1hattaN`
+    - DB: `casting_portal`
+  - Typical usage: edit code, run local MySQL, commit/push to GitHub, rsync to the app server.
+
+- App Server “dev” (runs Castingly under PM2)
+  - SSH: `ssh dev`
+  - Code: `~/apps/castingly-v2`
+  - Build/Restart:
+    - `npm run build`
+    - `pm2 restart castingly-v2 --update-env`
+  - Runtime: Next.js behind Apache proxy → `http://127.0.0.1:3003` (domain: `https://castingly.dailey.dev`)
+  - DB: connects to the cluster via local port `3307` (tunnel/service)
+  - Safe place to run env‑aware schema helper:
+    - `MIGRATION_ENV=.env.production node scripts/apply-inside-connect.mjs`
+
+- Database Cluster
+  - coredb1 (primary): `40.160.239.176`
+    - SSH: `ssh ubuntu@40.160.239.176`, then `sudo -i`
+    - MySQL root password: `/root/.mysql_root_pw`
+    - App DB: `castingly` (for Castingly features, e.g., Inside Connect)
+    - Core DB: `dailey_core_auth` (Dailey Core auth service)
+    - Apply schema as root (example):
+      - `mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS castingly CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"`
+      - `mysql -u root -p castingly < database/migrations/20251026_inside_connect.sql`
+      - `mysql -u root -p castingly < database/migrations/20251026_inside_connect_fix_indexes.sql`
+  - coredb2 (replica): `40.160.239.175`
+    - Replicates from coredb1; do not apply writes here
+    - (Optional) Verify replication with `SHOW SLAVE STATUS\G`
+
+- Media API (DMAPI)
+  - Base URL (prod): `https://media.dailey.cloud` (see `DMAPI_BASE_URL`)
+  - Used by upload routes; short timeouts to avoid UI stalls
+
+Quick deploy from king → dev app server:
+```bash
+rsync -az --delete --exclude '.git' --exclude 'node_modules' --exclude '.next' \
+      --exclude '.env.production' --exclude '.env.local' ./ dev:~/apps/castingly-v2/
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && npm run build && pm2 restart castingly-v2 --update-env"'
+```
+
 3) Nginx
 - Proxy `server_name castingly.dailey.cloud` to `127.0.0.1:3000`.
 - Add no‑cache headers for `index.html` to avoid stale SPA after deploys.
