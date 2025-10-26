@@ -100,7 +100,7 @@ export default function ActorProfile() {
   const router = useRouter()
   const { user, logout, token } = useAuthStore()
   // Fetch light profile first, then media separately for perceived speed
-  const { profile: actorData, loading, error } = useActorProfile(user?.id)
+  const { profile: actorData, loading, error, refresh: refreshProfile } = useActorProfile(user?.id)
   const { media, loading: mediaLoading, reload: reloadMedia } = useActorMedia(user?.id)
   
   const deleteMediaFile = async (fileId: string) => {
@@ -118,7 +118,9 @@ export default function ActorProfile() {
     }
   }
   const [isEditing, setIsEditing] = useState(false)
-  const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string }>({})
+  const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string; age_range?: string }>({})
+  const [skillsInput, setSkillsInput] = useState('')
+  const [pendingSkills, setPendingSkills] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string; index: number } | null>(null)
   const [imageGallery, setImageGallery] = useState<Array<{ src: string; alt: string }>>([])
@@ -296,7 +298,9 @@ export default function ActorProfile() {
         height: actorData.height || '',
         eye_color: actorData.eye_color || '',
         hair_color: actorData.hair_color || '',
+        age_range: actorData.age_range || '',
       })
+      setPendingSkills(Array.isArray(actorData.skills) ? actorData.skills : [])
     }
   }, [actorData])
 
@@ -322,11 +326,13 @@ export default function ActorProfile() {
           height: edit.height,
           eye_color: edit.eye_color,
           hair_color: edit.hair_color,
+          age_range: edit.age_range,
+          ...(pendingSkills ? { skills: pendingSkills } : {}),
         }),
       })
       if (!res.ok) throw new Error('Failed to save profile')
       setIsEditing(false)
-      window.location.reload()
+      try { refreshProfile() } catch {}
     } catch (e) {
       alert('Failed to save profile')
     }
@@ -529,7 +535,16 @@ export default function ActorProfile() {
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <Calendar className="w-4 h-4 text-gray-400" />
-                      <span>Age Range: {actorData?.age_range || 'Not specified'}</span>
+                      {isEditing ? (
+                        <input
+                          className="border rounded px-2 py-1 text-sm"
+                          value={edit.age_range || ''}
+                          onChange={(e) => setEdit((s) => ({ ...s, age_range: e.target.value }))}
+                          placeholder="e.g. 20-30"
+                        />
+                      ) : (
+                        <span>Age Range: {actorData?.age_range || 'Not specified'}</span>
+                      )}
                     </div>
                   </div>
                   
@@ -751,17 +766,54 @@ export default function ActorProfile() {
                   <CardTitle>Special Skills</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {actorData?.skills?.map((skill) => (
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {(pendingSkills || []).map((skill) => (
                       <Badge key={skill} variant="secondary">
                         {skill}
+                        {isEditing && (
+                          <button
+                            className="ml-1 text-xs text-gray-500 hover:text-gray-700"
+                            onClick={() => setPendingSkills((list) => list.filter((s) => s !== skill))}
+                            aria-label={`Remove ${skill}`}
+                          >
+                            ×
+                          </button>
+                        )}
                       </Badge>
                     ))}
                     {isEditing && (
-                      <Button size="sm" variant="outline">
-                        <Plus className="w-3 h-3 mr-1" />
-                        Add Skill
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <input
+                          className="border rounded px-2 py-1 text-sm"
+                          placeholder="Add a skill"
+                          value={skillsInput}
+                          onChange={(e) => setSkillsInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              const v = skillsInput.trim()
+                              if (v && !pendingSkills.includes(v)) {
+                                setPendingSkills((list) => [...list, v])
+                                setSkillsInput('')
+                              }
+                            }
+                          }}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const v = skillsInput.trim()
+                            if (v && !pendingSkills.includes(v)) {
+                              setPendingSkills((list) => [...list, v])
+                              setSkillsInput('')
+                            }
+                          }}
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          Add Skill
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </CardContent>

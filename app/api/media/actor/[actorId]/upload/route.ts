@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { uploadFileForActor, listActorFiles, getFile as getDmapiFile, listFiles as listDmapiFilesServer, listBucketFolder } from '@/lib/server/dmapi-service'
+import { query } from '@/lib/db_existing'
 import { uploadFileToDmapi, resolveStorageLocation, listFiles as listUserFiles } from '@/lib/dmapi'
 import { daileyCoreAuth } from '@/lib/auth/dailey-core'
 import { type MediaCategory } from '@/lib/dmapi'
@@ -221,9 +222,10 @@ export async function POST(
       }
       const simple = simplifyFileResponse(fileRecord)
       let proxy_url: string | null = null
+      let storedName: string | null = null
       try {
         const nameFromSigned = (fileRecord?.signed_url || '').split('?')[0].split('/')
-        const storedName = nameFromSigned[nameFromSigned.length - 1] || null
+        storedName = nameFromSigned[nameFromSigned.length - 1] || null
         if (storedName) {
           const qp = new URLSearchParams()
           qp.set('bucket', 'castingly-public')
@@ -232,6 +234,23 @@ export async function POST(
           qp.set('name', storedName)
           if ((fileRecord as any)?.signed_url) qp.set('signed', (fileRecord as any).signed_url)
           proxy_url = `/api/media/proxy?${qp.toString()}`
+        }
+      } catch {}
+      // Persist avatar_url for convenience when the category is headshot
+      try {
+        if (proxy_url && category === 'headshot') {
+          await query('UPDATE users SET avatar_url = ? WHERE id = ?', [proxy_url, actorId])
+          if (storedName) {
+            await query(
+              `UPDATE profiles 
+               SET metadata = JSON_SET(
+                 COALESCE(metadata, JSON_OBJECT()),
+                 '$.avatar', JSON_OBJECT('bucket', ?, 'userId', ?, 'path', ?, 'name', ?)
+               )
+               WHERE user_id = ?`,
+              ['castingly-public', String(actorId), String(folderPath || `actors/${actorId}/headshots`), storedName, String(actorId)]
+            )
+          }
         }
       } catch {}
       return NextResponse.json({ success: true, file: { ...simple, proxy_url }, id: dmapiId })
@@ -306,9 +325,10 @@ export async function POST(
     }
     const simple = simplifyFileResponse(fileRecord)
     let proxy_url: string | null = null
+    let storedName: string | null = null
     try {
       const nameFromSigned = (fileRecord?.signed_url || '').split('?')[0].split('/')
-      const storedName = nameFromSigned[nameFromSigned.length - 1] || null
+      storedName = nameFromSigned[nameFromSigned.length - 1] || null
       if (storedName) {
         const qp = new URLSearchParams()
         qp.set('bucket', 'castingly-public')
@@ -317,6 +337,23 @@ export async function POST(
         qp.set('name', storedName)
         if ((fileRecord as any)?.signed_url) qp.set('signed', (fileRecord as any).signed_url)
         proxy_url = `/api/media/proxy?${qp.toString()}`
+      }
+    } catch {}
+    // Persist avatar_url for convenience when the category is headshot
+    try {
+      if (proxy_url && category === 'headshot') {
+        await query('UPDATE users SET avatar_url = ? WHERE id = ?', [proxy_url, actorId])
+        if (storedName) {
+          await query(
+            `UPDATE profiles 
+             SET metadata = JSON_SET(
+               COALESCE(metadata, JSON_OBJECT()),
+               '$.avatar', JSON_OBJECT('bucket', ?, 'userId', ?, 'path', ?, 'name', ?)
+             )
+             WHERE user_id = ?`,
+            ['castingly-public', String(actorId), `actors/${actorId}/headshots`, storedName, String(actorId)]
+          )
+        }
       }
     } catch {}
     return NextResponse.json({ success: true, file: { ...simple, proxy_url }, id: dmapiId })

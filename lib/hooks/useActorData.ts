@@ -60,6 +60,7 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
   const [profile, setProfile] = useState<ActorProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -109,9 +110,11 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
     }
 
     fetchProfile()
-  }, [actorId, token, user?.id, options?.includeMedia])
+  }, [actorId, token, user?.id, options?.includeMedia, version])
 
-  return { profile, loading, error }
+  const refresh = () => setVersion((v) => v + 1)
+
+  return { profile, loading, error, refresh }
 }
 
 export function useActorMedia(actorId?: string) {

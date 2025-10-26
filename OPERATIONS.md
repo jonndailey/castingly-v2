@@ -102,4 +102,21 @@ mysql -h 127.0.0.1 -P 3307 -u castingly_app -p$DB_PASSWORD -D castingly < script
   - `curl -sS http://127.0.0.1:3003/api/connect/listings`
   - `pm2 ls` (ensure `castingly-v2` online)
   - `mysql -h 127.0.0.1 -P 3307 -u castingly_app -p -D castingly -e "SHOW TABLES LIKE 'agencies';"`
+### Backfill actor avatar pointers (prod)
+Use this when avatars exist in DMAPI but `users.avatar_url`/`profiles.metadata.avatar` are missing.
+
+Via app (preferred):
+```bash
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && MIGRATION_ENV=.env.production node scripts/backfill-avatars-via-app.mjs --force --host http://127.0.0.1:3003"'
+```
+
+Via DMAPI service (if Core login works for the service account):
+```bash
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && MIGRATION_ENV=.env.production node scripts/backfill-avatars.mjs --force"'
+```
+
+Single user:
+```bash
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && MIGRATION_ENV=.env.production node scripts/backfill-avatars-via-app.mjs --id 1024 --host http://127.0.0.1:3003"'
+```
 

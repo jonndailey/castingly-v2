@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { User, Lock, Eye, EyeOff, ArrowRight, ShieldCheck, Clapperboard, Sparkles, Smartphone, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import useAuthStore from '@/lib/store/auth-store'
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { login, completeMfa, pendingMfa, clearPendingMfa, isLoading, error, clearError } = useAuthStore()
   
   const [email, setEmail] = useState('')
@@ -24,6 +25,7 @@ export default function LoginPage() {
   const [backupCode, setBackupCode] = useState('')
   const [useBackupCode, setUseBackupCode] = useState(false)
   const isMfaStep = Boolean(pendingMfa)
+  const [flashInfo, setFlashInfo] = useState<string | null>(null)
 
   useEffect(() => {
     if (pendingMfa) {
@@ -54,6 +56,25 @@ export default function LoginPage() {
       cancelled = true
     }
   }, [])
+
+  // Show a friendly message when redirected for session expiration
+  useEffect(() => {
+    try {
+      const reason = searchParams.get('reason')
+      if (reason === 'session_expired') {
+        setFlashInfo('Your session expired. Please sign in again.')
+        return
+      }
+      // Also support a sessionStorage flag set by the fetch interceptor
+      const expired = sessionStorage.getItem('sessionExpired')
+      if (expired === '1') {
+        setFlashInfo('Your session expired. Please sign in again.')
+        sessionStorage.removeItem('sessionExpired')
+      }
+    } catch {
+      // ignore
+    }
+  }, [searchParams])
 
   const routeToDashboard = () => {
     const { user } = useAuthStore.getState()
@@ -166,12 +187,13 @@ export default function LoginPage() {
   }
 
   // Demo login function
-  const demoLogin = async (role: 'actor' | 'agent' | 'casting_director' | 'admin') => {
+  const demoLogin = async (role: 'actor' | 'agent' | 'casting_director' | 'admin' | 'investor') => {
     const demoAccounts = {
       actor: { email: 'jackfdfnnelly@gmail.com', password: 'demo123' },
       agent: { email: 'super.agent@castingly.com', password: 'demo123' },
       casting_director: { email: 'indie.casting@castingly.com', password: 'demo123' },
-      admin: { email: 'admin@dailey.cloud', password: 'demo123' }
+      admin: { email: 'admin@dailey.cloud', password: 'demo123' },
+      investor: { email: 'investor@castingly.com', password: 'demo123' },
     }
     
     const account = demoAccounts[role]
@@ -206,6 +228,16 @@ export default function LoginPage() {
             </Link>
             <p className="mt-2 text-gray-600">Welcome back</p>
           </div>
+
+          {flashInfo && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 text-sm mb-6"
+            >
+              {flashInfo}
+            </motion.div>
+          )}
           
           {isMfaStep ? (
             <motion.div
@@ -429,6 +461,7 @@ export default function LoginPage() {
                     <Button onClick={() => demoLogin('agent')} variant="outline" size="sm">Agent</Button>
                     <Button onClick={() => demoLogin('casting_director')} variant="outline" size="sm">Casting Director</Button>
                     <Button onClick={() => demoLogin('admin')} variant="outline" size="sm" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100">🛡️ Admin</Button>
+                    <Button onClick={() => demoLogin('investor')} variant="outline" size="sm">Investor</Button>
                   </div>
                 </div>
               )}

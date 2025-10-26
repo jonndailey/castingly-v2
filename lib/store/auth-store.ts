@@ -72,7 +72,8 @@ const DEMO_PASSWORDS: Record<string, string> = {
   'jackfdfnnelly@gmail.com': 'demo123',
   'super.agent@castingly.com': 'demo123',
   'indie.casting@castingly.com': 'demo123',
-  'admin@dailey.cloud': 'demo123'
+  'admin@dailey.cloud': 'demo123',
+  'investor@castingly.com': 'demo123'
 }
 
 const DEMO_USERS: Record<string, User> = {
@@ -106,6 +107,14 @@ const DEMO_USERS: Record<string, User> = {
     name: 'Admin User',
     role: 'admin',
     avatar_url: 'https://ui-avatars.com/api/?name=Admin+User&background=DC2626&color=fff',
+    email_verified: true
+  },
+  'investor@castingly.com': {
+    id: '5',
+    email: 'investor@castingly.com',
+    name: 'Investor Demo',
+    role: 'investor',
+    avatar_url: 'https://ui-avatars.com/api/?name=Investor+Demo&background=4CAF50&color=fff',
     email_verified: true
   }
 }

@@ -47,6 +47,23 @@ A comprehensive platform built with Next.js 15, TypeScript, and MySQL that conne
 - Profile photo consistency: Actor Profile uses the same source as Dashboard (`/api/media/avatar/:id` fallback).
 - Mobile avatar camera button made smaller (reduced border/ring/shadow).
 
+### Avatar persistence + DMAPI pointers
+- Avatars are stored in DMAPI (bucket `castingly-public`) under `actors/:actorId/headshots`.
+- The app keeps a short pointer in the DB for fast resolution:
+  - `users.avatar_url` → short proxy URL (`/api/media/proxy?...`)
+  - `profiles.metadata.avatar` → structured pointer `{bucket,userId,path,name}`
+- Upload flow now writes both pointers on headshot upload.
+- The avatar endpoint (`/api/media/avatar/:id`) has a fallback:
+  - If DB pointer is missing, it lists DMAPI headshots, returns a redirect, and persists the pointer(s) for next time.
+
+Utilities
+- Backfill existing avatars (app-assisted):
+  - `MIGRATION_ENV=.env.production node scripts/backfill-avatars-via-app.mjs --force --host http://127.0.0.1:3003`
+  - Optional single user: `--id <userId>`
+- Backfill via DMAPI service (requires Core login to succeed):
+  - `MIGRATION_ENV=.env.production node scripts/backfill-avatars.mjs --force`
+  - Note: if Core rejects with “Invalid application”, use the app-assisted script above.
+
 ### Profile saves across mixed schemas
 - Profile update only writes columns that exist (`profiles` table introspection) to avoid “Unknown column” errors.
 - Headshot uploads trigger a client `reloadMedia()` for immediate counters and thumbnails.
@@ -286,6 +303,8 @@ View our comprehensive [Beta Release Roadmap](./BETA_RELEASE_ROADMAP.md) for det
 - `npm run start` - Start production server
 - `npm run lint` - Run ESLint
 - `pm2 start ecosystem.config.js --only castingly-v2` - Launch compiled app under PM2
+ - `node scripts/backfill-avatars-via-app.mjs --host http://127.0.0.1:3003` - Backfill avatar pointers via app
+ - `node scripts/backfill-avatars.mjs` - Backfill avatar pointers via DMAPI service
 
 ### Development Features
 - **Hot reload** with fast refresh

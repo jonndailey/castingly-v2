@@ -31,118 +31,236 @@ export async function query(sql: string, params?: any[]) {
 
 // Actor-specific queries adapted for existing production schema (users + profiles + media)
 export const actors = {
-  // Get all actors with basic info
+  // Get all actors with basic info (prefer modern schema; fallback to legacy)
   async getAll(limit = 100, offset = 0) {
-    const rows = await query(
-      `SELECT u.id, u.name, u.email,
-              u.avatar_url AS avatar_url, p.bio
-       FROM users u
-       LEFT JOIN profiles p ON p.user_id = u.id
-       WHERE u.role = 'actor'
-       ORDER BY u.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [limit, offset]
-    ) as any[];
-    return rows;
-  },
-
-  // Get single actor with full profile
-  async getById(id: string) {
-    const rows = await query(
-      `SELECT u.id, u.email, u.name, u.role, u.avatar_url AS profile_image,
-              u.email_verified, u.forum_display_name, u.forum_signature,
-              u.is_verified_professional, u.is_investor, u.forum_last_seen_at,
-              u.created_at, u.updated_at,
-              p.bio, p.location, p.height, p.eye_color, p.hair_color,
-              p.skills, p.metadata AS profile_metadata
-       FROM users u
-       LEFT JOIN profiles p ON p.user_id = u.id
-       WHERE u.id = ? AND u.role = 'actor'`,
-      [id]
-    ) as any[];
-    const row = rows[0];
-    if (!row) return undefined as any;
-    // Normalize JSON skills to comma-delimited string for API consumers
     try {
-      if (row && row.skills && typeof row.skills !== 'string') {
-        const s = Array.isArray(row.skills) ? row.skills : JSON.parse(String(row.skills));
-        if (Array.isArray(s)) row.skills = s.join(', ');
-      }
+      return (await query(
+        `SELECT u.id, u.name, u.email,
+                u.avatar_url AS avatar_url, p.bio
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE u.role = 'actor'
+         ORDER BY u.created_at DESC
+         LIMIT ? OFFSET ?`,
+        [limit, offset]
+      )) as any[]
     } catch {
-      // leave as-is on parse failure
+      // Legacy local schema
+      return (await query(
+        `SELECT 
+           u.id,
+           CONCAT_WS(' ', u.first_name, u.last_name) AS name,
+           u.email,
+           COALESCE(u.profile_image, a.profile_image) AS avatar_url,
+           a.bio
+         FROM users u
+         LEFT JOIN actors a ON a.user_id = u.id
+         WHERE u.role = 'actor'
+         ORDER BY u.created_at DESC
+         LIMIT ? OFFSET ?`,
+        [limit, offset]
+      )) as any[]
     }
-    return row;
   },
 
-  // Get actor's media
+  // Get single actor with full profile (prefer modern; fallback legacy)
+  async getById(id: string) {
+    try {
+      const rows = (await query(
+        `SELECT u.id, u.email, u.name, u.role, u.avatar_url AS profile_image,
+                u.email_verified, u.forum_display_name, u.forum_signature,
+                u.is_verified_professional, u.is_investor, u.forum_last_seen_at,
+                u.created_at, u.updated_at,
+                u.phone,
+                p.bio, p.location, p.height, p.eye_color, p.hair_color,
+                p.skills, p.website, p.instagram, p.twitter, p.age_range, p.resume_url,
+                p.metadata AS profile_metadata
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE u.id = ? AND u.role = 'actor'`,
+        [id]
+      )) as any[]
+      const row = rows[0]
+      if (!row) return undefined as any
+      try {
+        if (row && row.skills && typeof row.skills !== 'string') {
+          const s = Array.isArray(row.skills) ? row.skills : JSON.parse(String(row.skills))
+          if (Array.isArray(s)) row.skills = s.join(', ')
+        }
+      } catch {}
+      return row
+    } catch {
+      const rows = (await query(
+        `SELECT 
+           u.id,
+           u.email,
+           CONCAT_WS(' ', u.first_name, u.last_name) AS name,
+           u.role,
+           COALESCE(u.profile_image, a.profile_image) AS profile_image,
+           (u.status = 'active') AS email_verified,
+           u.forum_display_name,
+           u.forum_signature,
+           u.is_verified_professional,
+           u.is_investor,
+           u.forum_last_seen_at,
+           u.created_at,
+           u.updated_at,
+           a.bio,
+           NULL AS location,
+           a.height,
+           a.eye_color,
+           a.hair_color,
+           a.skills,
+           NULL AS profile_metadata
+         FROM users u
+         LEFT JOIN actors a ON a.user_id = u.id
+         WHERE u.id = ? AND u.role = 'actor'`,
+        [id]
+      )) as any[]
+      const row = rows[0]
+      if (!row) return undefined as any
+      try {
+        if (row && row.skills && typeof row.skills !== 'string') {
+          const s = Array.isArray(row.skills) ? row.skills : JSON.parse(String(row.skills))
+          if (Array.isArray(s)) row.skills = s.join(', ')
+        }
+      } catch {}
+      return row
+    }
+  },
+
+  // Get actor's media (prefer modern media table; fallback to actor_media)
   async getMedia(actorId: string) {
-    const rows = await query(
-      `SELECT id, user_id, type, url, thumbnail_url, is_primary, caption, file_size,
-              created_at
-       FROM media
-       WHERE user_id = ?
-       ORDER BY is_primary DESC, created_at DESC`,
-      [actorId]
-    ) as any[];
-    // Map to legacy-like shape expected by API route
-    return rows.map((r: any) => ({
-      id: r.id,
-      media_type: r.type,
-      media_url: r.url,
-      is_primary: r.is_primary,
-      caption: r.caption,
-      created_at: r.created_at,
-      file_size: r.file_size,
-    }));
+    try {
+      const rows = (await query(
+        `SELECT id, user_id, type, url, thumbnail_url, is_primary, caption, file_size,
+                created_at
+         FROM media
+         WHERE user_id = ?
+         ORDER BY is_primary DESC, created_at DESC`,
+        [actorId]
+      )) as any[]
+      return rows.map((r: any) => ({
+        id: r.id,
+        media_type: r.type,
+        media_url: r.url,
+        is_primary: r.is_primary,
+        caption: r.caption,
+        created_at: r.created_at,
+        file_size: r.file_size,
+      }))
+    } catch {
+      try {
+        const rows = (await query(
+          `SELECT id, actor_id, media_type, media_url, is_primary, caption, created_at
+           FROM actor_media
+           WHERE actor_id = ?
+           ORDER BY is_primary DESC, created_at DESC`,
+          [actorId]
+        )) as any[]
+        return rows.map((r: any) => ({
+          id: r.id,
+          media_type: r.media_type,
+          media_url: r.media_url,
+          is_primary: r.is_primary,
+          caption: r.caption,
+          created_at: r.created_at,
+          file_size: null,
+        }))
+      } catch {
+        return [] as any[]
+      }
+    }
   },
 
-  // Search actors
+  // Search actors (prefer modern; fallback legacy)
   async search(searchTerm: string) {
-    const like = `%${searchTerm}%`;
-    const rows = await query(
-      `SELECT u.id, u.name, u.email,
-              u.avatar_url AS avatar_url, p.bio
-       FROM users u
-       LEFT JOIN profiles p ON p.user_id = u.id
-       WHERE u.role = 'actor'
-         AND (u.name LIKE ? OR u.email LIKE ? OR p.bio LIKE ? OR p.searchable_text LIKE ?)
-       ORDER BY u.name`,
-      [like, like, like, like]
-    ) as any[];
-    return rows;
+    const like = `%${searchTerm}%`
+    try {
+      return (await query(
+        `SELECT u.id, u.name, u.email,
+                u.avatar_url AS avatar_url, p.bio
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE u.role = 'actor'
+           AND (u.name LIKE ? OR u.email LIKE ? OR p.bio LIKE ? OR p.searchable_text LIKE ?)
+         ORDER BY u.name`,
+        [like, like, like, like]
+      )) as any[]
+    } catch {
+      return (await query(
+        `SELECT 
+           u.id,
+           CONCAT_WS(' ', u.first_name, u.last_name) AS name,
+           u.email,
+           COALESCE(u.profile_image, a.profile_image) AS avatar_url,
+           a.bio
+         FROM users u
+         LEFT JOIN actors a ON a.user_id = u.id
+         WHERE u.role = 'actor'
+           AND (CONCAT_WS(' ', u.first_name, u.last_name) LIKE ? OR u.email LIKE ? OR a.bio LIKE ?)
+         ORDER BY name`,
+        [like, like, like]
+      )) as any[]
+    }
   },
 
-  // Get actors by skills
+  // Get actors by skills (prefer modern; fallback legacy)
   async getBySkills(skills: string) {
-    const like = `%${skills}%`;
-    const rows = await query(
-      `SELECT u.id, u.name, u.email,
-              u.avatar_url AS avatar_url, p.bio, p.skills
-       FROM users u
-       LEFT JOIN profiles p ON p.user_id = u.id
-       WHERE u.role = 'actor' AND (JSON_SEARCH(p.skills, 'one', ?) IS NOT NULL OR p.searchable_text LIKE ?)
-       ORDER BY u.name`,
-      [skills, like]
-    ) as any[];
-    return rows;
+    const like = `%${skills}%`
+    try {
+      return (await query(
+        `SELECT u.id, u.name, u.email,
+                u.avatar_url AS avatar_url, p.bio, p.skills
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE u.role = 'actor' AND (JSON_SEARCH(p.skills, 'one', ?) IS NOT NULL OR p.searchable_text LIKE ?)
+         ORDER BY u.name`,
+        [skills, like]
+      )) as any[]
+    } catch {
+      return (await query(
+        `SELECT 
+           u.id,
+           CONCAT_WS(' ', u.first_name, u.last_name) AS name,
+           u.email,
+           COALESCE(u.profile_image, a.profile_image) AS avatar_url,
+           a.bio,
+           a.skills
+         FROM users u
+         LEFT JOIN actors a ON a.user_id = u.id
+         WHERE u.role = 'actor' AND (a.skills LIKE ? OR a.bio LIKE ?)
+         ORDER BY name`,
+        [like, like]
+      )) as any[]
+    }
   },
 
-  // Get actor count
+  // Get actor count (compatible both schemas)
   async getCount() {
     const rows = await query(
       `SELECT COUNT(*) as count FROM users WHERE role = 'actor'`
-    ) as Array<{ count: number }>;
-    return rows[0]?.count ?? 0;
+    ) as Array<{ count: number }>
+    return rows[0]?.count ?? 0
   }
-};
+}
 
 // Authentication helpers for existing schema
 export const auth = {
   async findByEmail(email: string) {
     const rows = await query(
-      `SELECT id, email, name, role, avatar_url,
-              email_verified, forum_display_name, forum_signature,
-              is_verified_professional, is_investor, forum_last_seen_at
+      `SELECT 
+          id,
+          email,
+          CONCAT_WS(' ', first_name, last_name) AS name,
+          role,
+          COALESCE(profile_image, '') AS avatar_url,
+          (status = 'active') AS email_verified,
+          forum_display_name,
+          forum_signature,
+          is_verified_professional,
+          is_investor,
+          forum_last_seen_at
        FROM users WHERE email = ?`,
       [email.toLowerCase()]
     ) as any[];
@@ -153,9 +271,18 @@ export const auth = {
     const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
     
     const rows = await query(
-      `SELECT id, email, name, role, avatar_url, email_verified,
-              forum_display_name, forum_signature, is_verified_professional,
-              is_investor, forum_last_seen_at
+      `SELECT 
+          id,
+          email,
+          CONCAT_WS(' ', first_name, last_name) AS name,
+          role,
+          COALESCE(profile_image, '') AS avatar_url,
+          (status = 'active') AS email_verified,
+          forum_display_name,
+          forum_signature,
+          is_verified_professional,
+          is_investor,
+          forum_last_seen_at
        FROM users WHERE email = ? AND password_hash = ?`,
       [email.toLowerCase(), hashedPassword]
     ) as any[];
