@@ -245,11 +245,11 @@ async function serviceFetch<T>(
   const token = await obtainServiceToken()
   const controller = new AbortController()
   let timeout: any
-  const to = typeof timeoutMs === 'number' ? timeoutMs : (method === 'GET' ? 2500 : 10000)
+  const to = typeof timeoutMs === 'number' ? timeoutMs : (method === 'GET' ? 4500 : 12000)
   if (to > 0 && typeof AbortController !== 'undefined') {
     timeout = setTimeout(() => controller.abort(), to)
   }
-  const response = await fetch(`${ensureBaseUrl(DMAPI_BASE_URL)}${path}`, {
+  const doFetch = () => fetch(`${ensureBaseUrl(DMAPI_BASE_URL)}${path}`, {
     method,
     body,
     headers: {
@@ -260,11 +260,18 @@ async function serviceFetch<T>(
     },
     signal: controller.signal as any,
   })
+  let response = await doFetch()
   if (timeout) clearTimeout(timeout)
 
   if (response.status === 401 && retryOnAuthFailure) {
     await obtainServiceToken(true)
     return serviceFetch(path, { method, body, headers, retryOnAuthFailure: false })
+  }
+
+  // Retry once on transient upstream errors
+  if ((response.status === 502 || response.status === 503) && method === 'GET') {
+    await new Promise((r) => setTimeout(r, 200))
+    response = await doFetch()
   }
 
   if (!response.ok) {

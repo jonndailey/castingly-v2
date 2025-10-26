@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { listBucketFolder } from '@/lib/server/dmapi-service'
+import { validateUserToken } from '@/lib/dmapi'
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,11 +22,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Security: allow unauthenticated access for public bucket objects
-    // For non-public buckets, require an Authorization header
-    const authz = request.headers.get('authorization')
+    // For private buckets, require a valid token for matching userId
     const isPublicBucket = String(bucket).toLowerCase() === 'castingly-public'
-    if (!authz && !isPublicBucket) {
-      return new Response('Unauthorized', { status: 401 })
+    if (!isPublicBucket) {
+      const authz = request.headers.get('authorization')
+      const auth = await validateUserToken(authz)
+      if (!auth || String(auth.userId) !== String(userId)) {
+        return new Response('Unauthorized', { status: 401 })
+      }
     }
 
     let res: Response | null = null
@@ -51,25 +55,8 @@ export async function GET(request: NextRequest) {
       // ignore and try fallback
     }
 
-    if (!res) {
-      // Fallback: DMAPI public serve path
-      const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
-      if (base) {
-        const tail = String(path || '').replace(/^\/+|\/+$/g, '')
-        const qp = new URLSearchParams()
-        qp.set('app_id', String(process.env.DMAPI_APP_ID || 'castingly'))
-        const dmapiUrl = `${base}/api/serve/files/${encodeURIComponent(String(userId))}/${encodeURIComponent(String(bucket))}/${tail ? tail + '/' : ''}${encodeURIComponent(String(name))}?${qp.toString()}`
-        try {
-          // Prefer redirect to let the browser fetch directly
-          return new Response(null, { status: 302, headers: { Location: dmapiUrl, ...cacheHeaders } })
-        } catch (e: any) {
-          try { console.error('[media/proxy] fallback fetch failed:', e?.message || e) } catch {}
-        }
-      }
-    }
-
-    // If all else fails
-    return new Response('Proxy error', { status: 500 })
+    // If we couldn't resolve a URL from DMAPI, return 404
+    return new Response('Not found', { status: 404 })
   } catch (e: any) {
     try { console.error('[media/proxy] proxy error:', e?.message || e) } catch {}
     return new Response('Proxy error', { status: 500 })
