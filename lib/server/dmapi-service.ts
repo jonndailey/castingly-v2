@@ -330,6 +330,18 @@ export async function deleteFile(fileId: string) {
   })
 }
 
+export async function updateFileMetadata(fileId: string, metadata: Record<string, unknown>) {
+  if (!fileId) throw new Error('File ID is required')
+  const body = JSON.stringify({ metadata })
+  // DMAPI supports PATCH /api/files/:id with { metadata }
+  await serviceFetch(`/api/files/${encodeURIComponent(fileId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    timeoutMs: 6000,
+  })
+}
+
 export async function listActorFiles(
   actorId: string | number,
   options: ServiceListParams = {}
@@ -341,6 +353,9 @@ export async function listActorFiles(
 
   return listFiles({
     ...options,
+    // Always scope by actor's user id so we surface files even when metadata is missing
+    userId: String(actorId),
+    // In special cases we can override subject scoping via env, but actor scoping takes precedence
     ...(DMAPI_LIST_USER_ID ? { userId: DMAPI_LIST_USER_ID } : {}),
     metadata,
   })

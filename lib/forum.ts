@@ -91,7 +91,8 @@ function mapPost(row: any): ForumPost {
       ? {
           id: row.author_id,
           name: row.author_name,
-          avatar_url: resolveWebAvatarUrl(row.author_avatar_url, row.author_name),
+          // Use canonical avatar endpoint to avoid stale proxy pointers
+          avatar_url: `/api/media/avatar/safe/${encodeURIComponent(String(row.author_id))}`,
           forum_display_name: row.author_forum_display_name,
           forum_signature: row.author_forum_signature,
           role: row.author_role
@@ -122,7 +123,8 @@ function mapReply(row: any): ForumReply {
       ? {
           id: row.author_id,
           name: row.author_name,
-          avatar_url: resolveWebAvatarUrl(row.author_avatar_url, row.author_name),
+          // Use canonical avatar endpoint to avoid stale proxy pointers
+          avatar_url: `/api/media/avatar/safe/${encodeURIComponent(String(row.author_id))}`,
           forum_display_name: row.author_forum_display_name,
           forum_signature: row.author_forum_signature,
           role: row.author_role

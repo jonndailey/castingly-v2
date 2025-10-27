@@ -137,6 +137,15 @@ export async function POST(
       }
       const current = seen.size
         if (current >= allowed) {
+          try {
+            console.warn('[media/actor/upload] limit reached', {
+              actorId,
+              category,
+              current,
+              allowed,
+              self: isSelf,
+            })
+          } catch {}
           return NextResponse.json(
             { error: 'Limit reached', message: `You can have up to ${allowed} ${category}${allowed === 1 ? '' : 's'}` },
             { status: 409 }

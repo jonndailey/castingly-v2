@@ -163,14 +163,15 @@ function ActorPrimaryHeadshot({ actorId, fallback, name }: { actorId: string; fa
     loadedRef.current = true
     ;(async () => {
       try {
-        const res = await fetch(`/api/actors/${actorId}`,
+        const res = await fetch(`/api/actors/${actorId}?media=1`,
           token ? { headers: { Authorization: `Bearer ${token}` } } : undefined as any)
         if (!res.ok) throw new Error('failed')
         const data = await res.json()
         const headshots = data?.media?.headshots || []
         const first = headshots[0]
-        const url = first?.public_url || first?.url || first?.signed_url || first?.thumbnail_url || null
-        setSrc(url)
+        const url = first?.signed_url || first?.public_url || first?.url || first?.thumbnail_url || null
+        const display = versionedUrl(url, first?.uploaded_at)
+        setSrc(display)
       } catch {
         setSrc(null)
       }
@@ -178,4 +179,15 @@ function ActorPrimaryHeadshot({ actorId, fallback, name }: { actorId: string; fa
   }, [actorId])
   const display = src || fallback || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}`
   return <img className="w-12 h-12 rounded-full object-cover bg-gray-100" src={display} alt={name} />
+}
+
+function versionedUrl(u?: string | null, uploadedAt?: string) {
+  if (!u) return u || null
+  const isSigned = /[?&]X-Amz-(Signature|Credential)=/i.test(u)
+  if (isSigned) return u
+  if (!uploadedAt) return u
+  const ts = Date.parse(uploadedAt)
+  if (Number.isNaN(ts)) return u
+  const sep = u.includes('?') ? '&' : '?'
+  return `${u}${sep}v=${ts}`
 }

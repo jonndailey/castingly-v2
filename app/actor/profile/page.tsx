@@ -37,6 +37,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { ForumActivityPanel } from '@/components/forum/forum-activity-panel'
 import useAuthStore from '@/lib/store/auth-store'
 import { useActorProfile, useActorMedia, type ActorMediaEntry } from '@/lib/hooks/useActorData'
+import { useSignedHeadshot } from '@/lib/hooks/useSignedHeadshot'
 
 // Mock data for the profile
 const profileData = {
@@ -132,13 +133,14 @@ export default function ActorProfile() {
   const headshots = (media?.headshots ?? []).filter((entry) =>
     Boolean(entry.url || entry.signed_url || entry.thumbnail_url)
   )
+  const { url: signedHeadshotUrl } = useSignedHeadshot(user?.id)
   const headshotGallery = headshots.map((item, index) => ({
     src: getMediaUrl(item) ?? '',
     alt: `Headshot ${index + 1}`,
   }))
   const primaryHeadshot = headshots[0] ?? null
 
-  const galleryImages = (media?.other ?? [])
+  const galleryImages = (media?.gallery ?? media?.other ?? [])
     .filter((entry) => Boolean(entry.url || entry.signed_url))
     .map((item, index) => ({
       id: item.id as unknown as string | undefined,
@@ -473,8 +475,10 @@ export default function ActorProfile() {
                 <div className="flex flex-col items-center">
                   <Avatar
                     src={
-                      actorData?.avatar_url ||
-                      `/api/media/avatar/${encodeURIComponent(String(user?.id || ''))}`
+                      // Owner: wait for signed URL; avoid issuing public proxy fetch
+                      (user?.id && actorData?.id && String(user.id) === String(actorData.id))
+                        ? (signedHeadshotUrl || undefined)
+                        : (actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(user?.id || ''))}`)
                     }
                     alt={actorData?.name || ''}
                     fallback={actorData?.name || ''}
@@ -1336,8 +1340,22 @@ function cn(...classes: (string | boolean | undefined)[]) {
   return classes.filter(Boolean).join(' ')
 }
 
-function getMediaUrl(entry: ActorMediaEntry | { url?: string | null; signed_url?: string | null; thumbnail_url?: string | null }) {
-  return entry.url || entry.signed_url || entry.thumbnail_url || null
+function getMediaUrl(entry: ActorMediaEntry | { url?: string | null; signed_url?: string | null; thumbnail_url?: string | null; uploaded_at?: string | null }) {
+  // Prefer signed URLs for owner views (private by default)
+  const chosen = (entry as any).signed_url || (entry as any).url || (entry as any).thumbnail_url || null
+  if (!chosen) return null
+  // Avoid appending cache-busters to signed URLs
+  const isSigned = /[?&]X-Amz-(Signature|Credential)=/i.test(chosen)
+  if (isSigned) return chosen
+  const uploadedAt: string | undefined = (entry as any)?.uploaded_at || undefined
+  if (uploadedAt) {
+    const ts = Date.parse(uploadedAt)
+    if (!Number.isNaN(ts)) {
+      const sep = chosen.includes('?') ? '&' : '?'
+      return `${chosen}${sep}v=${ts}`
+    }
+  }
+  return chosen
 }
 
 function AnimatePresence({ children, mode }: { children: React.ReactNode, mode?: string }) {

@@ -214,16 +214,16 @@ export default function ActorMedia() {
   }
 
   const handleDownload = (item: MediaItem) => {
-    const link = item.url || item.signed_url
+    const link = item.signed_url || item.url
     if (link) {
-      window.open(link, '_blank', 'noopener,noreferrer')
+      window.open(versionedUrl(link, item.uploaded_at) as string, '_blank', 'noopener,noreferrer')
     }
   }
 
   const handlePreview = (item: MediaItem) => {
-    const link = item.url || item.signed_url
+    const link = item.signed_url || item.url
     if (link) {
-      window.open(link, '_blank', 'noopener,noreferrer')
+      window.open(versionedUrl(link, item.uploaded_at) as string, '_blank', 'noopener,noreferrer')
     }
   }
 
@@ -569,6 +569,7 @@ function mapToMediaItem(file: Record<string, unknown>): MediaItem {
 function isKnownCategory(value: string): value is MediaCategory {
   return [
     'headshot',
+    'gallery',
     'reel',
     'self_tape',
     'voice_over',
@@ -579,7 +580,8 @@ function isKnownCategory(value: string): value is MediaCategory {
 }
 
 function MediaPreview({ item }: { item: MediaItem }) {
-  const thumbnail = item.thumbnail_url || item.url || item.signed_url
+  const thumbnailRaw = item.thumbnail_url || item.signed_url || item.url
+  const thumbnail = versionedUrl(thumbnailRaw, item.uploaded_at) as string
 
   if (thumbnail && item.mime_type.startsWith('image/')) {
     return (
@@ -629,4 +631,16 @@ function formatDate(value: string) {
     day: 'numeric',
     year: 'numeric',
   })
+}
+
+function versionedUrl(u?: string | null, uploadedAt?: string) {
+  if (!u) return u || null
+  // Avoid adding query params to pre-signed URLs
+  const isSigned = /[?&]X-Amz-(Signature|Credential)=/i.test(u)
+  if (isSigned) return u
+  if (!uploadedAt) return u
+  const ts = Date.parse(uploadedAt)
+  if (Number.isNaN(ts)) return u
+  const sep = u.includes('?') ? '&' : '?'
+  return `${u}${sep}v=${ts}`
 }

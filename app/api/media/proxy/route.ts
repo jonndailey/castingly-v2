@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { listBucketFolder } from '@/lib/server/dmapi-service'
+import { listBucketFolder, listFiles as listDmapiFiles } from '@/lib/server/dmapi-service'
 import { validateUserToken } from '@/lib/dmapi'
 
 export async function GET(request: NextRequest) {
@@ -41,11 +41,18 @@ export async function GET(request: NextRequest) {
         path: String(path || ''),
       })
       const files = Array.isArray(folder?.files) ? folder.files : []
-      // Find by exact name, else by variant-insensitive name, else pick best-guess
+      // Find by exact name
       const exact = files.find((it: any) => String(it?.name || it?.original_filename || it?.id || '') === String(name))
+      // Try variant-insensitive match (ignore _large/_medium/_small and extension)
       const variantBase = String(name).toLowerCase().replace(/_(large|medium|small)(?=\.[^.]+$)/, '')
-      const byVariant = exact || files.find((it: any) => String(it?.name || '').toLowerCase().replace(/_(large|medium|small)(?=\.[^.]+$)/, '') === variantBase)
-      const prefer = byVariant || files.find((f: any) => /large\./i.test(String(f.name||''))) || files[0]
+      const baseNoExt = variantBase.replace(/\.[^.]+$/, '')
+      const byVariant = exact || files.find((it: any) => {
+        const n = String(it?.name || '').toLowerCase()
+        const nNoExt = n.replace(/\.[^.]+$/, '')
+        const nNoSuffix = nNoExt.replace(/_(large|medium|small)$/, '')
+        return nNoSuffix === baseNoExt
+      })
+      const prefer = byVariant || files.find((f: any) => /\.(jpe?g|png|webp)$/i.test(String(f.name||''))) || files[0]
       const targetUrl = (prefer as any)?.signed_url || (prefer as any)?.public_url
       if (targetUrl && typeof targetUrl === 'string') {
         return new Response(null, { status: 302, headers: { Location: targetUrl, ...cacheHeaders } })
@@ -55,7 +62,25 @@ export async function GET(request: NextRequest) {
       // ignore and try fallback
     }
 
-    // If we couldn't resolve a URL from DMAPI, return 404
+    // Fallback: search by metadata (category=headshot) for this actor
+    try {
+      const actorFiles = await listDmapiFiles({ limit: 200, userId: String(userId), metadata: { category: 'headshot' } }) as any
+      const files = Array.isArray(actorFiles?.files) ? actorFiles.files : []
+      if (files.length > 0) {
+        // Prefer a web-friendly image first
+        const pick = (arr: any[]) =>
+          arr.find((f) => /\.(jpe?g|png|webp)$/i.test(String(f.original_filename || f.name || ''))) || arr[0]
+        const chosen = pick(files) as any
+        const target = chosen?.signed_url || chosen?.public_url || chosen?.url || null
+        if (target) {
+          return new Response(null, { status: 302, headers: { Location: target, ...cacheHeaders } })
+        }
+      }
+    } catch (e) {
+      try { console.error('[media/proxy] metadata fallback failed:', (e as any)?.message || e) } catch {}
+    }
+
+    // If we couldn't resolve any URL from DMAPI, return 404
     return new Response('Not found', { status: 404 })
   } catch (e: any) {
     try { console.error('[media/proxy] proxy error:', e?.message || e) } catch {}

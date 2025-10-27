@@ -156,17 +156,17 @@ export default function AgentRosterActorPage() {
               {media.map((m) => (
                 <div key={m.id} className="border rounded-lg p-3">
                   <div className="aspect-video bg-gray-100 rounded mb-2 flex items-center justify-center overflow-hidden">
-                    {m.thumbnail_url ? (
-                      <img src={m.thumbnail_url} alt={m.name} className="w-full h-full object-cover" />
-                    ) : (
+                    {m.thumbnail_url || m.signed_url || m.url ? (
+                      <img src={(m.thumbnail_url || m.signed_url || m.url) as string} alt={m.name} className="w-full h-full object-cover" />
+                      ) : (
                       <span className="text-xs text-gray-500">No preview</span>
                     )}
                   </div>
                   <div className="text-sm font-medium truncate" title={m.name}>{m.name}</div>
                   <div className="text-xs text-gray-500">{m.category}</div>
                   <div className="mt-2 flex items-center gap-2">
-                    {(m.url || m.signed_url) && (
-                      <a className="px-2 py-1 border rounded text-sm flex items-center gap-1" href={m.url || m.signed_url || '#'} target="_blank" rel="noreferrer">
+                    {(m.signed_url || m.url) && (
+                      <a className="px-2 py-1 border rounded text-sm flex items-center gap-1" href={m.signed_url || m.url || '#'} target="_blank" rel="noreferrer">
                         <Download className="w-4 h-4" /> View
                       </a>
                     )}

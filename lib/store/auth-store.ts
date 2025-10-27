@@ -151,7 +151,11 @@ const useAuthStore = create<AuthState>()(
           
           if (!response.ok) {
             // In production, do NOT allow demo fallback unless explicitly enabled
-            const enableDemoFallback = (process.env.NEXT_PUBLIC_ENABLE_DEMO_FALLBACK === 'true') || process.env.NODE_ENV !== 'production'
+            const enableDemoFallback = (
+              process.env.NEXT_PUBLIC_ENABLE_DEMO_FALLBACK === 'true' ||
+              process.env.NODE_ENV !== 'production' ||
+              (typeof window !== 'undefined' && /(^localhost:|127\.0\.0\.1|dev\.|staging\.)/i.test(window.location.host))
+            )
 
             if (enableDemoFallback) {
               const demoUser = DEMO_USERS[email]

@@ -22,6 +22,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ProfileAvatar } from '@/components/ui/avatar'
+import { useSignedHeadshot } from '@/lib/hooks/useSignedHeadshot'
 import useAuthStore from '@/lib/store/auth-store'
 import { useActorProfile } from '@/lib/hooks/useActorData'
 
@@ -85,6 +86,7 @@ export default function ActorDashboard() {
   const { user, token } = useAuthStore()
   const { profile, loading, error } = useActorProfile(user?.id)
   const [localAvatar, setLocalAvatar] = React.useState<string | null>(null)
+  const { url: signedHeadshotUrl } = useSignedHeadshot(user?.id)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [hideCompletion, setHideCompletion] = React.useState<boolean>(false)
 
@@ -268,7 +270,8 @@ export default function ActorDashboard() {
                     editable
                     size="xl"
                     alt={profile.name}
-                    src={localAvatar || profile.avatar_url || undefined}
+                    // Owner: prefer signed URL; avoid falling back to avatar_url before signed
+                    src={localAvatar || signedHeadshotUrl || undefined}
                     fallback={profile.name}
                     onUpload={handleAvatarUpload}
                   />

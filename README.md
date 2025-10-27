@@ -47,14 +47,13 @@ A comprehensive platform built with Next.js 15, TypeScript, and MySQL that conne
 - Profile photo consistency: Actor Profile uses the same source as Dashboard (`/api/media/avatar/:id` fallback).
 - Mobile avatar camera button made smaller (reduced border/ring/shadow).
 
-### Avatar persistence + DMAPI pointers
-- Avatars are stored in DMAPI (bucket `castingly-public`) under `actors/:actorId/headshots`.
-- The app keeps a short pointer in the DB for fast resolution:
-  - `users.avatar_url` → short proxy URL (`/api/media/proxy?...`)
-  - `profiles.metadata.avatar` → structured pointer `{bucket,userId,path,name}`
-- Upload flow now writes both pointers on headshot upload.
-- The avatar endpoint (`/api/media/avatar/:id`) has a fallback:
-  - If DB pointer is missing, it lists DMAPI headshots, returns a redirect, and persists the pointer(s) for next time.
+### Headshots: private by default, owner signed render
+- Headshots are uploaded to DMAPI with private access by default under `castingly-private/actors/:actorId/headshots`.
+- The app keeps DB pointers for convenience and fallback:
+  - `users.avatar_url` → short proxy URL (`/api/media/proxy?...`) without embedding signatures
+  - `profiles.metadata.avatar` → structured pointer `{ bucket, userId, path, name }`
+- Owner views (Dashboard/Profile) render privatized headshots by fetching a short‑lived signed URL server‑side.
+- Public proxy (`/api/media/proxy`) only resolves public files; private headshots 404 for unauthenticated requests (expected).
 
 Utilities
 - Backfill existing avatars (app-assisted):
@@ -63,6 +62,19 @@ Utilities
 - Backfill via DMAPI service (requires Core login to succeed):
   - `MIGRATION_ENV=.env.production node scripts/backfill-avatars.mjs --force`
   - Note: if Core rejects with “Invalid application”, use the app-assisted script above.
+
+### Media Retrieval Matrix
+- Owner (private):
+  - `GET /api/media/headshot/signed/:actorId` with Authorization: returns `{ url }` (signed or public). Only owner is allowed.
+  - UI uses this to render private headshots without exposing tokens in `<img>`.
+- Public/unauthenticated:
+  - `GET /api/media/proxy?bucket=…&userId=…&path=…&name=…` tries to resolve public assets (lists folder → redirects). Private files return 404.
+- Admin/service:
+  - Use DMAPI list endpoints via service token when needed.
+
+### Troubleshooting 404 on proxy
+- If calling `/api/media/proxy` for a private headshot or a variant name that doesn’t exist in the headshots folder (e.g., `*_large.webp`), a 404 is expected.
+- For owner display, use the signed headshot endpoint (above) or `/api/media/list?category=headshot` with Authorization and prefer `signed_url`.
 
 ### Profile saves across mixed schemas
 - Profile update only writes columns that exist (`profiles` table introspection) to avoid “Unknown column” errors.
@@ -615,6 +627,17 @@ Notes on legacy profile reads
   - Replace `COUNT(*) OVER()` with separate `COUNT(*)` in DB list; whitelist `order_by` binding.
   - Gate pdf processing to `application/pdf` to stop pdfjs parse noise.
   - Disable pm2 `watch` for dmapi-backend; `pm2 save`.
+
+### Backfill normalization (server)
+
+- Route: `POST /api/admin/media/backfill`
+- Auth: `X-Admin-Secret`, Core admin token, or `dmapi_` API key
+- Params: `userId`, `dry`, `category`, `max`
+- Behavior: scans `actors/<id>/*` across public/private buckets, infers `metadata.category` and `metadata.sourceActorId`, and PATCHes with retry/backoff.
+- DMAPI prerequisite to complete writes:
+  - Enable `/api/files` listing for `app_id=castingly` so user-scoped lists return DB ids, or
+  - Add `storage_key` lookup filter to `/api/files` to resolve ids from folder results.
+  - Once available, the route patches ids directly (no further app changes).
 
 ## 🔒 Production Checklist (Castingly server)
 

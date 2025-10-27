@@ -18,6 +18,7 @@ type LegacyMediaRecord = {
 
 type CategorisedMedia = {
   headshots: SimplifiedMedia[]
+  gallery: SimplifiedMedia[]
   resumes: SimplifiedMedia[]
   reels: SimplifiedMedia[]
   self_tapes: SimplifiedMedia[]
@@ -163,10 +164,27 @@ export async function GET(
     }
 
     let dmapiFiles: DmapiFile[] = []
-    if (includeMedia) {
-      try {
-        // Only list headshots folder for speed
+    const seenKeys = new Set<string>()
+  let metaCount = 0
+  let folderCount = 0
+  if (includeMedia) {
+    try {
+        // Headshots: include both private and public by metadata; keep public folder as fallback
         const listUserId = String(actor.id)
+        // Prefer metadata search (includes private with signed_url)
+        try {
+          const byMeta = await listActorDmapiFiles(actor.id, { limit: 400, metadata: { category: 'headshot' } }) as any
+          const files = Array.isArray(byMeta?.files) ? byMeta.files : []
+          metaCount += files.length
+          for (const f of files) {
+            const key = String(f.id || f.original_filename || f.name || '')
+            if (key && !seenKeys.has(key)) {
+              seenKeys.add(key)
+              dmapiFiles.push(f)
+            }
+          }
+        } catch {}
+        // Also try public folder listing as a backstop (older uploads)
         if (listUserId) {
           try {
             const folder = await listBucketFolder({
@@ -175,7 +193,7 @@ export async function GET(
               path: `actors/${actor.id}/headshots`,
             })
             const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
-            const mapped: DmapiFile[] = (folder.files || []).map((it: any) => {
+          const mapped: DmapiFile[] = ((folder as any).files || []).map((it: any) => {
               const name: string = String(it.name || '')
               const path: string = String(it.path || '')
               const ext = name.toLowerCase().split('.').pop() || ''
@@ -199,24 +217,105 @@ export async function GET(
                 }
               } as unknown as DmapiFile
             })
-            dmapiFiles = mapped
+            for (const f of mapped) {
+              const key = String((f as any).id || (f as any).original_filename || '')
+              if (key && !seenKeys.has(key)) {
+                seenKeys.add(key)
+                dmapiFiles.push(f)
+              }
+            }
+            folderCount += mapped.length
           } catch {}
         }
         // Fetch non-headshot categories via metadata filter in small batches
         try {
-          const categories = ['resume', 'reel', 'self_tape', 'voice_over', 'document']
+          const categories = ['gallery', 'resume', 'reel', 'self_tape', 'voice_over', 'document']
           for (const cat of categories) {
             try {
               const res = await listActorDmapiFiles(actor.id, { limit: 200, metadata: { category: cat } }) as any
               const files = Array.isArray(res?.files) ? res.files : []
+              metaCount += files.length
               for (const f of files) {
-                // Skip any headshots picked up via metadata to avoid duplicates
-                const metaCat = (f?.metadata?.category || '').toString().toLowerCase()
-                if (metaCat === 'headshot') continue
-                dmapiFiles.push(f)
+                const key = String(f.id || f.original_filename || f.name || '')
+                if (key && !seenKeys.has(key)) {
+                  seenKeys.add(key)
+                  dmapiFiles.push(f)
+                }
               }
             } catch {}
           }
+        } catch {}
+
+        // Folder fallbacks by category (public and private) to surface legacy imports without metadata
+        async function pushFolder(bucketId: string, subpath: string, catHint: string) {
+          try {
+            const folder = await listBucketFolder({ bucketId, userId: String(listUserId), path: subpath })
+            const files = Array.isArray(folder?.files) ? folder.files : []
+            for (const it of files as any[]) {
+              const name = String((it as any).name || (it as any).original_filename || (it as any).filename || '')
+              const f: any = {
+                id: String((it as any).id || `${actor.id}-${(name||'unknown')}`),
+                original_filename: name,
+                file_size: Number((it as any).size || 0),
+                mime_type: inferMimeFromPath(String((it as any).public_url || (it as any).signed_url || (it as any).url || '')),
+                file_extension: String((name || '').split('.').pop() || ''),
+                uploaded_at: new Date().toISOString(),
+                public_url: (bucketId === 'castingly-public') ? ((it as any).public_url || (it as any).url || null) : null,
+                signed_url: (bucketId === 'castingly-private') ? ((it as any).signed_url || (it as any).url || null) : null,
+                thumbnail_url: (it as any).thumbnail_signed_url || (it as any).thumbnail_url || (bucketId === 'castingly-public' ? ((it as any).public_url || null) : null),
+                metadata: { bucketId, folderPath: subpath, category: catHint, source: 'castingly' },
+              }
+              const key = String(f.id || f.original_filename || '')
+              if (key && !seenKeys.has(key)) {
+                seenKeys.add(key)
+                dmapiFiles.push(f)
+              }
+            }
+            folderCount += files.length
+          } catch {}
+        }
+
+        await pushFolder('castingly-public', `actors/${actor.id}/gallery`, 'gallery')
+        await pushFolder('castingly-private', `actors/${actor.id}/gallery`, 'gallery')
+        await pushFolder('castingly-public', `actors/${actor.id}/reels`, 'reel')
+        await pushFolder('castingly-private', `actors/${actor.id}/reels`, 'reel')
+        await pushFolder('castingly-private', `actors/${actor.id}/resumes`, 'resume')
+        await pushFolder('castingly-private', `actors/${actor.id}/self-tapes`, 'self_tape')
+        await pushFolder('castingly-public', `actors/${actor.id}/voice-over`, 'voice_over')
+        await pushFolder('castingly-private', `actors/${actor.id}/documents`, 'document')
+
+        // Private folder fallback for headshots (older imports without metadata)
+        try {
+          const folder = await listBucketFolder({
+            bucketId: 'castingly-private',
+            userId: String(listUserId),
+            path: `actors/${actor.id}/headshots`,
+          })
+          const mapped: DmapiFile[] = ((folder as any).files || []).map((it: any) => ({
+            id: String(it.id || `${actor.id}-${String(it.name||'unknown')}`),
+            original_filename: String(it.name || ''),
+            file_size: Number(it.size || 0),
+            mime_type: inferMimeFromPath(String(it.public_url || it.signed_url || it.url || '')),
+            file_extension: String(String(it.name || '').split('.').pop() || ''),
+            uploaded_at: new Date().toISOString(),
+            public_url: null,
+            signed_url: (it as any).signed_url || (it as any).url || null,
+            thumbnail_url: (it as any).thumbnail_signed_url || (it as any).thumbnail_url || null,
+            metadata: {
+              bucketId: 'castingly-private',
+              folderPath: `actors/${actor.id}/headshots`,
+              source: 'castingly',
+              category: 'headshot',
+            }
+          }) as unknown as DmapiFile[])
+          for (const f of mapped) {
+            const key = String((f as any).id || (f as any).original_filename || '')
+            if (key && !seenKeys.has(key)) {
+              seenKeys.add(key)
+              dmapiFiles.push(f)
+            }
+          }
+          folderCount += mapped.length
         } catch {}
       } catch (error) {
         console.error('Failed to fetch DMAPI media for actor:', error)
@@ -331,6 +430,11 @@ export async function GET(
       const hdrs = new Headers()
       hdrs.set('Cache-Control', includeMedia ? 'private, max-age=20' : (includePrivate ? 'private, max-age=10' : 'private, max-age=60'))
       hdrs.set('Vary', 'Authorization')
+      if (includeMedia) {
+        try { console.info('[actors/:id] media counters', { actorId: actor.id, metaCount, folderCount, includePrivate }) } catch {}
+        hdrs.set('X-Media-Meta-Count', String(metaCount))
+        hdrs.set('X-Media-Folder-Count', String(folderCount))
+      }
       return NextResponse.json(responseBody, { headers: hdrs })
     }
   } catch (error) {
@@ -374,6 +478,7 @@ function matchesActor(file: DmapiFile, actor: any) {
 function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): CategorisedMedia {
   const initial: CategorisedMedia = {
     headshots: [],
+    gallery: [],
     resumes: [],
     reels: [],
     self_tapes: [],
@@ -435,6 +540,9 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
       case 'headshot':
         initial.headshots.push(simplified)
         break
+      case 'gallery':
+        initial.gallery.push(simplified)
+        break
       case 'resume':
         initial.resumes.push(simplified)
         break
@@ -462,6 +570,7 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
 function categoriseLegacyMedia(records: LegacyMediaRecord[]): CategorisedMedia {
   const initial: CategorisedMedia = {
     headshots: [],
+    gallery: [],
     resumes: [],
     reels: [],
     self_tapes: [],
@@ -478,6 +587,9 @@ function categoriseLegacyMedia(records: LegacyMediaRecord[]): CategorisedMedia {
     switch (simplified.category) {
       case 'headshot':
         initial.headshots.push(simplified)
+        break
+      case 'gallery':
+        initial.gallery.push(simplified)
         break
       case 'resume':
         initial.resumes.push(simplified)
@@ -539,12 +651,14 @@ function filterToPublicMedia(media: CategorisedMedia): CategorisedMedia {
     )
 
   const headshots = filterList(media.headshots)
+  const gallery = filterList(media.gallery)
   const reels = filterList(media.reels)
   const voiceOver = filterList(media.voice_over)
   const otherPublic = filterList(media.other)
 
   return {
     headshots,
+    gallery,
     reels,
     voice_over: voiceOver,
     self_tapes: [],
@@ -590,6 +704,7 @@ function normalizeCategory(value?: string | null): string {
   const normalized = value.toLowerCase()
   switch (normalized) {
     case 'headshot':
+    case 'gallery':
     case 'reel':
     case 'resume':
     case 'self_tape':

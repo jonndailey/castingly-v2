@@ -221,6 +221,22 @@ DMAPI_SERVICE_PASSWORD=********
 PORT=3003
 ```
 
+### Backfill DMAPI Metadata (category/sourceActorId)
+
+An admin route normalizes legacy imports so the app can use fast metadata lookups instead of folder scans.
+
+- Endpoint: `POST /api/admin/media/backfill`
+- Auth: `X-Admin-Secret`, Core admin Bearer token, or a `dmapi_` API key
+- Params:
+  - `userId=<actor-uuid>` optional (omit to scan all)
+  - `dry=1|0` for dry-run vs apply
+  - `category=headshot|gallery|reel|resume|self_tape|voice_over|document` (optional)
+  - `max=<n>` optional cap per invocation (safe batches)
+- Behavior: scans `castingly-public` and `castingly-private` folders for the actor, infers category + `sourceActorId`, and PATCHes file metadata with retry/backoff.
+
+DMAPI prerequisite (small change):
+- Either enable `/api/files` listing for `app_id=castingly` so user-scoped queries return DB ids, or add a `storage_key` lookup filter. The backfill route will then PATCH ids directly.
+
 ## 📄 API Structure (Planned)
 
 ### Endpoints

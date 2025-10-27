@@ -38,11 +38,16 @@ export async function POST(request: NextRequest) {
       }
 
       let castinglyUser = daileyCoreAuth.mapToCastinglyUser(coreAuthResult.user)
-      // If our local DB defines a more specific role for this email, prefer it
+      // Merge with local DB role using priority: admin > casting_director > agent > actor
       try {
         const local = await auth.findByEmail(email)
-        if (local && local.role && local.role !== castinglyUser.role) {
-          castinglyUser = { ...castinglyUser, role: local.role }
+        if (local && local.role) {
+          const priority = { admin: 3, casting_director: 2, agent: 1, actor: 0 } as const
+          const localRole = String(local.role) as keyof typeof priority
+          const currentRole = castinglyUser.role as keyof typeof priority
+          if ((priority[localRole] ?? 0) > (priority[currentRole] ?? 0)) {
+            castinglyUser = { ...castinglyUser, role: local.role }
+          }
         }
       } catch {}
       console.log('✅ Dailey Core authentication successful for:', email)

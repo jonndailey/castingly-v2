@@ -41,6 +41,7 @@ export interface ActorProfile {
   }
   media?: {
     headshots: ActorMediaEntry[]
+    gallery: ActorMediaEntry[]
     resumes: ActorMediaEntry[]
     reels: ActorMediaEntry[]
     self_tapes: ActorMediaEntry[]

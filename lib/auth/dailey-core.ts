@@ -332,21 +332,18 @@ class DaileyCoreAuthClient {
    * Map Dailey Core roles to Castingly role
   */
   private mapToCastinglyRole(coreRoles: string[]): 'actor' | 'agent' | 'casting_director' | 'admin' | 'investor' {
-    const roles = coreRoles || [];
-    // Priority order: admin > casting_director > agent > actor (default)
-    // Note: investor is not a primary role, it's a flag. Investors can be actors, agents, etc.
-    if (roles.includes('admin') || roles.includes('tenant.admin') || roles.includes('core.admin')) {
-      return 'admin';
-    }
-    if (roles.includes('casting_director')) {
-      return 'casting_director';
-    }
-    if (roles.includes('agent')) {
-      return 'agent';
-    }
-    // Don't return 'investor' as a role - it's a secondary attribute
-    // Investors should have their primary role (actor, agent, etc.)
-    return 'actor'; // Default role
+    const roles = (coreRoles || []).map(r => String(r).toLowerCase())
+    const has = (...candidates: string[]) => candidates.some(c => roles.includes(c))
+    // Priority: admin > casting_director > agent > actor
+    if (has('admin', 'tenant.admin', 'core.admin', 'platform.admin')) return 'admin'
+    if (
+      has(
+        'casting_director', 'casting-director', 'casting.director', 'castingdirector',
+        'director', 'casting', 'professional.casting', 'role.casting', 'cd'
+      )
+    ) return 'casting_director'
+    if (has('agent', 'agency', 'talent_agent', 'professional.agent', 'role.agent')) return 'agent'
+    return 'actor'
   }
 
   /**

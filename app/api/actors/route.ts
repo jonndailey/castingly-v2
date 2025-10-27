@@ -24,10 +24,10 @@ export async function GET(request: NextRequest) {
       console.warn('[actors] DB list failed; returning empty list:', (e as any)?.message || e)
       actorList = []
     }
-    // Sanitize avatar URLs to avoid local filesystem paths
+    // Provide a stable avatar endpoint for clients; server resolves/persists pointers
     const safeActors = (actorList as any[]).map((a: any) => ({
       ...a,
-      avatar_url: resolveWebAvatarUrl(a.avatar_url, a.name)
+      avatar_url: `/api/media/avatar/safe/${encodeURIComponent(String(a.id))}`
     }));
 
     // Get total count for pagination

@@ -65,6 +65,14 @@ export async function POST(request: NextRequest) {
       const current = cur.length
       const allowed = maxCountFor(category)
         if (current >= allowed) {
+          try {
+            console.warn('[media/upload] limit reached', {
+              userId: authResult.userId,
+              category,
+              current,
+              allowed,
+            })
+          } catch {}
           return NextResponse.json(
             { error: 'Limit reached', message: `You can have up to ${allowed} ${category}${allowed === 1 ? '' : 's'}` },
             { status: 409 }

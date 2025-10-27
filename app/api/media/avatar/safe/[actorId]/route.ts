@@ -10,14 +10,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
     // Try user profile image first (local schema)
     let row: { avatar_url: string | null; name: string | null } | undefined
     try {
-      // Try modern schema columns first (avatar_url, name)
       const rowsModern = (await query(
         `SELECT avatar_url AS avatar_url, name FROM users WHERE id = ? LIMIT 1`,
         [actorId]
       )) as Array<{ avatar_url: string | null; name: string | null }>
       row = rowsModern?.[0]
       if (!row || (row.avatar_url == null && (row.name == null || String(row.name).trim() === ''))) {
-        // Fallback to legacy columns (profile_image, first_name/last_name)
         const rowsLegacy = (await query(
           `SELECT COALESCE(profile_image, NULL) AS avatar_url, CONCAT_WS(' ', first_name, last_name) AS name FROM users WHERE id = ? LIMIT 1`,
           [actorId]
@@ -25,7 +23,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
         row = rowsLegacy?.[0]
       }
     } catch {
-      // As last resort, ignore row; we'll use the UI avatar fallback
       row = undefined
     }
     const name = (row?.name && row.name.trim().length > 0) ? row.name : String(actorId)
@@ -33,32 +30,20 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
 
     let url: string | null = row?.avatar_url || null
     const cacheHeaders = {
-      // Avoid long-lived caches for avatar redirects; resolve fresh frequently
       'Cache-Control': 'private, max-age=60, must-revalidate',
       Vary: 'Authorization',
     }
     if (url && url.startsWith('/')) {
-      // Avoid forwarding to legacy proxy pointers which may 404 (e.g., variant-style names or private files)
-      // Only allow other known safe relative assets; skip '/api/media/proxy' so we can attempt a fresh resolution below.
+      // Avoid forwarding to legacy proxy pointers which may 404
       if (!url.startsWith('/api/media/proxy?')) {
         return new Response(null, { status: 302, headers: { Location: url, ...cacheHeaders } })
       }
-      // Otherwise, ignore and fall through to resolution logic.
     }
     if (url && /^https?:\/\//i.test(url)) {
       return new Response(null, { status: 302, headers: { Location: url, ...cacheHeaders } })
     }
 
-    // Skip redirecting via stored proxy metadata; resolve fresh below to avoid stale or private pointers
-    try {
-      // Read but intentionally do not redirect using stored proxy metadata
-      await query(
-        'SELECT 1 FROM profiles WHERE user_id = ? LIMIT 1',
-        [actorId]
-      )
-    } catch {}
-
-    // Fallback to DMAPI: try to find a headshot in the public bucket
+    // Resolve from public headshots folder directly
     try {
       const folder = await listBucketFolder({
         bucketId: 'castingly-public',
@@ -67,7 +52,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
       })
       const files = Array.isArray(folder?.files) ? folder.files : []
       if (files.length > 0) {
-        // Prefer large/medium/small, else first
         const pick = (arr: any[]) =>
           arr.find((f) => /large\./i.test(String(f.name || ''))) ||
           arr.find((f) => /medium\./i.test(String(f.name || ''))) ||
@@ -76,7 +60,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
         const chosen: any = pick(files)
         const direct = chosen?.public_url || chosen?.url || chosen?.signed_url || null
         if (direct) {
-          // Compose a short proxy and persist it (users.avatar_url + profiles.metadata.avatar)
           try {
             const namePart = String(chosen?.name || '')
             if (namePart) {
@@ -105,9 +88,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
       }
     } catch {}
 
-    // Last resort: redirect to UI-Avatars
+    // Fallback: UI-Avatars
     return new Response(null, { status: 302, headers: { Location: fallback, ...cacheHeaders } })
   } catch {
     return new Response('Avatar lookup failed', { status: 500 })
   }
 }
+

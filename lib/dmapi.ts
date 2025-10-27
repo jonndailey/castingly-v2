@@ -126,9 +126,9 @@ export function resolveStorageLocation(
   switch (category) {
     case 'headshot':
       return {
-        bucketId: 'castingly-public',
+        bucketId: 'castingly-private',
         folderPath: `actors/${userId}/headshots`,
-        access: 'public',
+        access: 'private',
       }
     case 'gallery':
       return {

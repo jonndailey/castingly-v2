@@ -120,3 +120,30 @@ Single user:
 ssh dev 'bash -lc "cd ~/apps/castingly-v2 && MIGRATION_ENV=.env.production node scripts/backfill-avatars-via-app.mjs --id 1024 --host http://127.0.0.1:3003"'
 ```
 
+### Backfill DMAPI media metadata (category/sourceActorId)
+Normalizes existing DMAPI media so server-side queries use fast metadata (instead of folder fallbacks). New admin route accepts Core admin tokens, X-Admin-Secret, or a dmapi_ API key for auth and supports small, safe batches.
+
+Run (dry run) for a single actor:
+```bash
+curl -sS -X POST 'https://castingly.dailey.dev/api/admin/media/backfill?userId=<actor-uuid>&dry=1' \
+  -H 'Authorization: Bearer <Core admin token or dmapi_ key>' | jq .
+```
+
+Run (apply) headshots in a small batch:
+```bash
+curl -sS -X POST 'https://castingly.dailey.dev/api/admin/media/backfill?userId=<actor-uuid>&dry=0&category=headshot&max=50' \
+  -H 'Authorization: Bearer <Core admin token or dmapi_ key>' | jq .
+```
+
+Notes and prerequisites:
+- Core/DMAPI alignment: the service account `dmapi-service@castingly.com` must be enrolled in Core app `castingly` (tenant `castingly`).
+- DMAPI change needed (small) to complete writes via API: either
+  - enable `/api/files` listing for `app_id=castingly` so it returns DB records (ids) for `user_id=…`, or
+  - add a lookup filter by `storage_key` to resolve ids. Once one of these is available, the backfill route will PATCH ids directly (it already throttles and retries).
+- Until the above change, the route will enumerate candidates from bucket folders and report totals, but PATCH may return rate-limit or endpoint-not-found errors.
+
+CLI fallback (server env, supports `DMAPI_API_KEY`):
+```bash
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && \
+  DMAPI_API_KEY=dmapi_*** node scripts/backfill-media.mjs --user <actor-uuid> --dry"'
+```

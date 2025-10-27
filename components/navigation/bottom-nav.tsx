@@ -370,7 +370,7 @@ export const SideNav: React.FC = () => {
                 <div>
                   <img
                     className="inline-block h-9 w-9 rounded-full"
-                    src={`/api/media/avatar/${encodeURIComponent(user.id)}`}
+                    src={`/api/media/avatar/safe/${encodeURIComponent(user.id)}`}
                     alt={user.name}
                     decoding="async"
                     onError={(e) => {

@@ -29,14 +29,52 @@ export async function GET(request: NextRequest) {
       categoryFilter && categoryFilter !== 'all'
         ? files.filter((file) => {
             const metadata = (file.metadata || {}) as Record<string, unknown>
-            const categoryValue = metadata['category'] as string | undefined
+            const categoryValue = (metadata['category'] as string | undefined)?.toLowerCase()
             const tags = metadata['tags']
-            const firstTag =
-              Array.isArray(tags) && tags.length > 0
-                ? (tags[0] as string | undefined)
-                : undefined
-            const fileCategory = categoryValue ?? firstTag
-            return fileCategory?.toLowerCase() === categoryFilter
+            const firstTag = Array.isArray(tags) && tags.length > 0 ? String(tags[0]).toLowerCase() : undefined
+            const folderPath = String((metadata['folderPath'] || (file as any).folder_path || '') || '').toLowerCase()
+            const storageKey = String((file as any).storage_key || '').toLowerCase()
+            const name = String((file as any).original_filename || (file as any).name || '').toLowerCase()
+
+            // Derive category from multiple hints
+            const isHeadshot =
+              categoryFilter === 'headshot' && (
+                categoryValue === 'headshot' ||
+                firstTag === 'headshot' ||
+                folderPath.includes('/headshots') ||
+                storageKey.includes('/headshots') ||
+                name.includes('headshot')
+              )
+
+            const isResume =
+              categoryFilter === 'resume' && (
+                categoryValue === 'resume' || firstTag === 'resume' || folderPath.includes('/resumes') || storageKey.includes('/resumes')
+              )
+
+            const isReel =
+              categoryFilter === 'reel' && (
+                categoryValue === 'reel' || firstTag === 'reel' || folderPath.includes('/reels') || storageKey.includes('/reels')
+              )
+
+            const isSelfTape =
+              categoryFilter === 'self_tape' && (
+                categoryValue === 'self_tape' || firstTag === 'self_tape' || folderPath.includes('self-tape') || folderPath.includes('self_tape')
+              )
+
+            const isVoiceOver =
+              categoryFilter === 'voice_over' && (
+                categoryValue === 'voice_over' || firstTag === 'voice_over' || folderPath.includes('voice')
+              )
+
+            const isDocument =
+              categoryFilter === 'document' && (
+                categoryValue === 'document' || firstTag === 'document' || folderPath.includes('/documents')
+              )
+
+            const matchByValue = categoryValue === categoryFilter || firstTag === categoryFilter
+            return (
+              matchByValue || isHeadshot || isResume || isReel || isSelfTape || isVoiceOver || isDocument
+            )
           })
         : files
 
