@@ -130,6 +130,26 @@ export default function ActorProfile() {
   const [uploadMessage, setUploadMessage] = useState<string>('')
   const [pendingCategory, setPendingCategory] = useState<'headshot' | 'gallery' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other'>('headshot')
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null)
+  const [fastHeadshotTiles, setFastHeadshotTiles] = useState<Array<{ thumbSrc: string; fullSrc: string; alt: string }>>([])
+
+  // Fast path: prefetch public small headshot tiles via lightweight API
+  useEffect(() => {
+    const id = String((actorData as any)?.id || user?.id || '')
+    if (!id) return
+    let aborted = false
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' })
+        if (!r.ok) return
+        const j = await r.json()
+        if (aborted) return
+        const tiles = Array.isArray(j?.tiles) ? j.tiles : []
+        const mapped = tiles.map((t: any) => ({ thumbSrc: String(t.thumb), fullSrc: String(t.full), alt: String(t.name || 'Headshot') }))
+        setFastHeadshotTiles(mapped)
+      } catch {}
+    })()
+    return () => { aborted = true }
+  }, [(actorData as any)?.id, user?.id])
 
   const headshots = (media?.headshots ?? []).filter((entry) =>
     Boolean(entry.url || entry.signed_url || entry.thumbnail_url)
@@ -198,7 +218,10 @@ export default function ActorProfile() {
     return tiles
   }
   const galleryTiles: VariantTile[] = buildVariantTiles((media?.gallery ?? media?.other ?? []))
-  const headshotTiles: VariantTile[] = buildVariantTiles((media?.headshots ?? []))
+  const headshotTilesFromMedia: VariantTile[] = buildVariantTiles((media?.headshots ?? []))
+  const headshotTiles: VariantTile[] = fastHeadshotTiles.length
+    ? fastHeadshotTiles as any
+    : headshotTilesFromMedia
   
   const openImageModal = useCallback((src: string, alt: string, gallery: Array<{ src: string; alt: string }>, index: number) => {
     setImageGallery(gallery)
