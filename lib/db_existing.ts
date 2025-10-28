@@ -73,7 +73,7 @@ export const actors = {
     try {
       return (await query(
         `SELECT u.id, u.name, u.email,
-                u.avatar_url AS avatar_url, p.bio
+                u.avatar_url AS avatar_url, p.bio, p.location
          FROM users u
          LEFT JOIN profiles p ON p.user_id = u.id
          WHERE u.role = 'actor'
@@ -89,7 +89,8 @@ export const actors = {
            CONCAT_WS(' ', u.first_name, u.last_name) AS name,
            u.email,
            COALESCE(u.profile_image, a.profile_image) AS avatar_url,
-           a.bio
+           a.bio,
+           NULL AS location
          FROM users u
          LEFT JOIN actors a ON a.user_id = u.id
          WHERE u.role = 'actor'
@@ -286,13 +287,13 @@ export const actors = {
     try {
       return (await query(
         `SELECT u.id, u.name, u.email,
-                u.avatar_url AS avatar_url, p.bio
+                u.avatar_url AS avatar_url, p.bio, p.location
          FROM users u
          LEFT JOIN profiles p ON p.user_id = u.id
          WHERE u.role = 'actor'
-           AND (u.name LIKE ? OR u.email LIKE ? OR p.bio LIKE ? OR p.searchable_text LIKE ?)
+           AND (u.name LIKE ? OR u.email LIKE ? OR p.bio LIKE ? OR p.location LIKE ? OR p.searchable_text LIKE ?)
          ORDER BY u.name`,
-        [like, like, like, like]
+        [like, like, like, like, like]
       )) as any[]
     } catch {
       return (await query(
@@ -301,13 +302,14 @@ export const actors = {
            CONCAT_WS(' ', u.first_name, u.last_name) AS name,
            u.email,
            COALESCE(u.profile_image, a.profile_image) AS avatar_url,
-           a.bio
+           a.bio,
+           a.location
          FROM users u
          LEFT JOIN actors a ON a.user_id = u.id
          WHERE u.role = 'actor'
-           AND (CONCAT_WS(' ', u.first_name, u.last_name) LIKE ? OR u.email LIKE ? OR a.bio LIKE ?)
+           AND (CONCAT_WS(' ', u.first_name, u.last_name) LIKE ? OR u.email LIKE ? OR a.bio LIKE ? OR a.location LIKE ?)
          ORDER BY name`,
-        [like, like, like]
+        [like, like, like, like]
       )) as any[]
     }
   },
