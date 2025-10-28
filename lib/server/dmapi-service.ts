@@ -384,8 +384,9 @@ export async function listBucketFolder(options: {
     searchParams.set('app_id', DMAPI_APP_ID)
   }
 
-  // Use the provided path as-is (e.g., 'actors/<userId>/headshots')
-  const normalizedPath = String(options.path || '').replace(/^\/+/, '')
+  // DMAPI expects the first segment to be the user id
+  const normalizedPath = `${options.userId.replace(/\/+$/, '')}/${String(options.path || '')
+    .replace(/^\/+/, '')}`
   searchParams.set('path', normalizedPath)
 
   return serviceFetch<BucketFolderResponse>(
