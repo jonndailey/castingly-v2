@@ -323,10 +323,14 @@ const useAuthStore = create<AuthState>()(
         // If using Dailey Core auth, logout from Dailey Core
         if (authSource === 'dailey-core' && refreshToken) {
           try {
-            await daileyCoreAuth.logout(refreshToken)
-            console.log('🎭 Logged out from Dailey Core')
-          } catch (error) {
-            console.error('🎭 Logout error:', error)
+            // Call our server route to avoid Core CORS in the browser
+            await fetch('/api/auth/logout', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refresh_token: refreshToken })
+            })
+          } catch {
+            // ignore network errors on logout
           }
         }
         

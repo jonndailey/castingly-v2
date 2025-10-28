@@ -539,15 +539,19 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
       directUrlCandidate && originalLower && directName === originalLower && storageLower && directName !== storageLower
     )
 
+    const forceProxyForPublicHeadshots = bucketId.toLowerCase() === 'castingly-public' && /(^|\/)headshots(\/|$)/i.test(folderPath)
     const simplified: SimplifiedMedia = {
       id: file.id,
-      // Prefer direct URLs, but use proxy when we detect filename/key mismatch
-      url: directLooksLikeOriginalButNotStorage ? (proxyUrl || null) : (directUrlCandidate || proxyUrl || null),
-      signed_url: directLooksLikeOriginalButNotStorage ? null : ((file as any)?.signed_url || null),
+      // Prefer direct URLs, but use proxy when we detect filename/key mismatch,
+      // or when headshots are in public bucket (migrated originals may not exist).
+      url: (forceProxyForPublicHeadshots || directLooksLikeOriginalButNotStorage)
+        ? (proxyUrl || null)
+        : (directUrlCandidate || proxyUrl || null),
+      signed_url: (forceProxyForPublicHeadshots || directLooksLikeOriginalButNotStorage) ? null : ((file as any)?.signed_url || null),
       thumbnail_url:
         (file as any)?.thumbnail_signed_url ||
         (file as any)?.thumbnail_url ||
-        (directLooksLikeOriginalButNotStorage ? null : (file as any)?.public_url) ||
+        ((forceProxyForPublicHeadshots || directLooksLikeOriginalButNotStorage) ? null : (file as any)?.public_url) ||
         proxyUrl ||
         null,
       name: file.original_filename,
