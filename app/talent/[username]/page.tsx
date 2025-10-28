@@ -25,13 +25,19 @@ export default function PublicTalentProfilePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { token } = useAuthStore()
+  const [fastHeadshotTiles, setFastHeadshotTiles] = useState<Array<{ thumb: string; full: string; name?: string }>>([])
+  const [fastGalleryTiles, setFastGalleryTiles] = useState<Array<{ thumb: string; full: string; name?: string }>>([])
 
-  const headshotList = Array.isArray(profile?.headshots)
-    ? (profile.headshots as Array<{ id: number; url: string; caption?: string }>)
-    : []
-  const galleryList = Array.isArray(profile?.gallery)
-    ? (profile.gallery as Array<{ id: number; url: string; caption?: string }>)
-    : []
+  const headshotList = fastHeadshotTiles.length > 0
+    ? fastHeadshotTiles.map((t, i) => ({ id: i + 1, url: t.thumb, caption: t.name || `Headshot ${i + 1}` }))
+    : Array.isArray(profile?.headshots)
+      ? (profile.headshots as Array<{ id: number; url: string; caption?: string }>)
+      : []
+  const galleryList = fastGalleryTiles.length > 0
+    ? fastGalleryTiles.map((t, i) => ({ id: i + 1, url: t.thumb, caption: t.name || `Gallery ${i + 1}` }))
+    : Array.isArray(profile?.gallery)
+      ? (profile.gallery as Array<{ id: number; url: string; caption?: string }>)
+      : []
   const reelList = Array.isArray(profile?.reels)
     ? (profile.reels as Array<{ id: number; title?: string; duration?: string; thumbnail?: string; url?: string }>)
     : []
@@ -132,6 +138,7 @@ export default function PublicTalentProfilePage() {
 
         // Transform actor data to profile format
         const transformedProfile = {
+          id: actorData.id,
           username: usernameParam,
           name: actorData.name || 'Actor',
           tagline: 'Professional Actor',
@@ -207,6 +214,33 @@ export default function PublicTalentProfilePage() {
       loadProfile()
     }
   }, [params.username])
+
+  // Fast tiles fetch for public viewers (headshots + gallery)
+  useEffect(() => {
+    const actorId = String(profile?.id || '')
+    if (!actorId) return
+    let aborted = false
+    ;(async () => {
+      try {
+        const [hs, gal] = await Promise.allSettled([
+          fetch(`/api/media/actor/${encodeURIComponent(actorId)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' }),
+          fetch(`/api/media/actor/${encodeURIComponent(actorId)}/gallery/tiles?ts=${Date.now()}`, { cache: 'no-store' }),
+        ])
+        if (aborted) return
+        if (hs.status === 'fulfilled' && hs.value.ok) {
+          const j = await hs.value.json()
+          const tiles = Array.isArray(j?.tiles) ? j.tiles : []
+          setFastHeadshotTiles(tiles)
+        }
+        if (gal.status === 'fulfilled' && gal.value.ok) {
+          const j = await gal.value.json()
+          const tiles = Array.isArray(j?.tiles) ? j.tiles : []
+          setFastGalleryTiles(tiles)
+        }
+      } catch {}
+    })()
+    return () => { aborted = true }
+  }, [profile?.id])
 
   if (loading) {
     return (
