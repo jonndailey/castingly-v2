@@ -923,6 +923,13 @@ export default function ActorProfile() {
                           index
                         )}
                       >
+                        {/* lightweight spinner until image paints */}
+                        <div data-spinner className="absolute inset-0 flex items-center justify-center">
+                          <svg className="animate-spin h-5 w-5 text-gray-400" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                          </svg>
+                        </div>
                         {photo.id && (
                           <button
                             type="button"
@@ -936,9 +943,14 @@ export default function ActorProfile() {
                         <img
                           src={photo.thumbSrc}
                           alt={`Headshot ${index + 1}`}
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover opacity-0"
                           loading="lazy"
                           decoding="async"
+                          onLoad={(e) => { 
+                            e.currentTarget.classList.remove('opacity-0');
+                            const sp = e.currentTarget.parentElement?.querySelector('[data-spinner]') as HTMLElement | null;
+                            if (sp) sp.style.display = 'none';
+                          }}
                           onError={(e) => {
                             e.currentTarget.style.display = 'none'
                             e.currentTarget.parentElement?.classList.add('bg-gray-300')
@@ -980,6 +992,12 @@ export default function ActorProfile() {
                         className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
                         onClick={() => openImageModal(photo.fullSrc, photo.alt, galleryTiles.map(g => ({ src: g.fullSrc, alt: g.alt })), index)}
                       >
+                        <div data-spinner className="absolute inset-0 flex items-center justify-center">
+                          <svg className="animate-spin h-5 w-5 text-gray-400" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                          </svg>
+                        </div>
                         {photo.id && (
                           <button
                             type="button"
@@ -993,9 +1011,14 @@ export default function ActorProfile() {
                         <img
                           src={photo.thumbSrc}
                           alt={photo.alt}
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover opacity-0"
                           loading="lazy"
                           decoding="async"
+                          onLoad={(e) => {
+                            e.currentTarget.classList.remove('opacity-0');
+                            const sp = e.currentTarget.parentElement?.querySelector('[data-spinner]') as HTMLElement | null;
+                            if (sp) sp.style.display = 'none';
+                          }}
                           onError={(e) => {
                             e.currentTarget.style.display = 'none'
                             e.currentTarget.parentElement?.classList.add('bg-gray-300')
