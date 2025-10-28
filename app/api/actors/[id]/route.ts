@@ -66,6 +66,13 @@ export async function GET(
       try { console.warn('[actors/:id] DB lookup failed, will try token/minimal fallback:', (e as any)?.message || e) } catch {}
     }
 
+    // Secondary attempt: any-role fetch by id (owner/admin views or non-actor roles)
+    if (!actor) {
+      try {
+        actor = await actors.getByIdAnyRole(id)
+      } catch {}
+    }
+
     // Fallback: if no actor row (or requester is self with non-actor role), try token + any-role profile
     if (!actor) {
       try {
@@ -85,7 +92,9 @@ export async function GET(
     }
 
     // Last-resort: build a minimal actor from Core token so profile can render
+    let profileSource: 'db' | 'fallback' = 'db'
     if (!actor) {
+      profileSource = 'fallback'
       try {
         const authHeader = request.headers.get('authorization')
         const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : null
@@ -162,6 +171,7 @@ export async function GET(
       const hdrs = new Headers()
       hdrs.set('Cache-Control', includeMedia ? 'private, max-age=20' : (includePrivate ? 'private, max-age=10' : 'private, max-age=60'))
       hdrs.set('Vary', 'Authorization')
+      hdrs.set('X-Profile-Source', 'cache')
       return NextResponse.json(cached.body, { headers: hdrs })
     }
 
@@ -473,6 +483,7 @@ export async function GET(
       const hdrs = new Headers()
       hdrs.set('Cache-Control', includeMedia ? 'private, max-age=20' : (includePrivate ? 'private, max-age=10' : 'private, max-age=60'))
       hdrs.set('Vary', 'Authorization')
+      hdrs.set('X-Profile-Source', profileSource)
       if (includeMedia) {
         try { console.info('[actors/:id] media counters', { actorId: actor.id, metaCount, folderCount, includePrivate }) } catch {}
         hdrs.set('X-Media-Meta-Count', String(metaCount))
