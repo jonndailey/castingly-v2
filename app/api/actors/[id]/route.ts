@@ -400,7 +400,8 @@ export async function GET(
       email: actor.email,
       name: actor.name,
       role: actor.role,
-      avatar_url: legacyAvatar || avatarFromDmapi,
+      // Prefer DMAPI-derived direct URL (signed/public) to avoid proxy redirects
+      avatar_url: avatarFromDmapi || legacyAvatar,
       bio: actor.bio,
       skills: skillsArray,
       phone: (actor as any).phone || null,
