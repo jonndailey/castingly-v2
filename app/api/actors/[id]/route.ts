@@ -269,13 +269,23 @@ export async function GET(
             folderCount += mapped.length
           } catch {}
         }
-        // Fetch non-headshot categories via metadata filter in small batches
+        // Fetch non-headshot categories concurrently (faster initial response)
         try {
           const categories = ['gallery', 'resume', 'reel', 'self_tape', 'voice_over', 'document']
-          for (const cat of categories) {
-            try {
-              const res = await listActorDmapiFiles(actor.id, { limit: 200, metadata: { category: cat } }) as any
-              const files = Array.isArray(res?.files) ? res.files : []
+          const results = await Promise.allSettled(
+            categories.map(async (cat) => {
+              try {
+                const res = await listActorDmapiFiles(actor.id, { limit: 200, metadata: { category: cat } }) as any
+                const files = Array.isArray(res?.files) ? res.files : []
+                return { cat, files }
+              } catch {
+                return { cat, files: [] as any[] }
+              }
+            })
+          )
+          for (const r of results) {
+            if (r.status === 'fulfilled') {
+              const files: any[] = r.value.files || []
               metaCount += files.length
               for (const f of files) {
                 const key = String(f.id || f.original_filename || f.name || '')
@@ -284,7 +294,7 @@ export async function GET(
                   dmapiFiles.push(f)
                 }
               }
-            } catch {}
+            }
           }
         } catch {}
 
