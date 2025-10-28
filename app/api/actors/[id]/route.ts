@@ -764,6 +764,7 @@ function inferCategoryFromFolder(metadata: Record<string, unknown>): string | un
     (metadata as any).folderPath || (metadata as any).folder_path || ''
   ).toLowerCase()
   if (!folder) return undefined
+  if (folder.includes('gallery')) return 'gallery'
   if (folder.includes('headshot')) return 'headshot'
   if (folder.includes('reel')) return 'reel'
   if (folder.includes('voice')) return 'voice_over'
