@@ -32,7 +32,6 @@ const AvatarImage = React.forwardRef<
     className={cn('aspect-square h-full w-full object-cover', className)}
     loading="lazy"
     decoding="async"
-    fetchPriority="low"
     {...props}
   />
 ))
@@ -83,6 +82,10 @@ const Avatar = React.forwardRef<
         <AvatarImage
           src={src}
           alt={alt}
+          // Elevate priority for larger avatars to improve perceived speed
+          fetchPriority={size === 'xl' || size === '2xl' || size === '3xl' ? 'high' : 'auto'}
+          loading={size === 'xl' || size === '2xl' || size === '3xl' ? 'eager' : 'lazy'}
+          decoding="async"
         />
         <AvatarFallback>
           {fallback || getInitials(alt || 'User')}
