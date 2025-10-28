@@ -286,6 +286,37 @@ export async function GET(
         await pushFolder('castingly-public', `actors/${actor.id}/voice-over`, 'voice_over')
         await pushFolder('castingly-private', `actors/${actor.id}/documents`, 'document')
 
+        // Public folder fallback for headshots (older imports without metadata)
+        try {
+          const folder = await listBucketFolder({
+            bucketId: 'castingly-public',
+            userId: String(listUserId),
+            path: `actors/${actor.id}/headshots`,
+          })
+          const files = Array.isArray((folder as any)?.files) ? (folder as any).files : []
+          for (const it of files as any[]) {
+            const name = String((it as any).name || (it as any).original_filename || (it as any).filename || '')
+            const f: any = {
+              id: String((it as any).id || `${actor.id}-${(name||'unknown')}`),
+              original_filename: name,
+              file_size: Number((it as any).size || 0),
+              mime_type: inferMimeFromPath(String((it as any).public_url || (it as any).signed_url || (it as any).url || '')),
+              file_extension: String((name || '').split('.').pop() || ''),
+              uploaded_at: new Date().toISOString(),
+              public_url: (it as any).public_url || (it as any).url || null,
+              signed_url: null,
+              thumbnail_url: (it as any).thumbnail_signed_url || (it as any).thumbnail_url || (it as any).public_url || null,
+              metadata: { bucketId: 'castingly-public', folderPath: `actors/${actor.id}/headshots`, category: 'headshot', source: 'castingly' },
+            }
+            const key = String(f.id || f.original_filename || '')
+            if (key && !seenKeys.has(key)) {
+              seenKeys.add(key)
+              dmapiFiles.push(f)
+            }
+          }
+          folderCount += files.length
+        } catch {}
+
         // Private folder fallback for headshots (older imports without metadata)
         try {
           const folder = await listBucketFolder({

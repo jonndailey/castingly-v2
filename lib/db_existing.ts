@@ -486,6 +486,14 @@ export const profiles = {
       userFields.push('phone = ?')
       userValues.push(data.phone)
     }
+    if ((data as any).forum_display_name !== undefined) {
+      userFields.push('forum_display_name = ?')
+      userValues.push((data as any).forum_display_name)
+    }
+    if ((data as any).forum_signature !== undefined) {
+      userFields.push('forum_signature = ?')
+      userValues.push((data as any).forum_signature)
+    }
 
     if (userFields.length) {
       userValues.push(id)

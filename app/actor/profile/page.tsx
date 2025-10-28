@@ -120,6 +120,7 @@ export default function ActorProfile() {
   }
   const [isEditing, setIsEditing] = useState(false)
   const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string; age_range?: string }>({})
+  const [saveMessage, setSaveMessage] = useState<string>('')
   const [skillsInput, setSkillsInput] = useState('')
   const [pendingSkills, setPendingSkills] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState('overview')
@@ -345,6 +346,9 @@ export default function ActorProfile() {
         eye_color: actorData.eye_color || '',
         hair_color: actorData.hair_color || '',
         age_range: actorData.age_range || '',
+        // Forum fields
+        forum_display_name: (actorData as any).forum_display_name || '',
+        forum_signature: (actorData as any).forum_signature || '',
       })
       setPendingSkills(Array.isArray(actorData.skills) ? actorData.skills : [])
     }
@@ -374,10 +378,14 @@ export default function ActorProfile() {
           hair_color: edit.hair_color,
           age_range: edit.age_range,
           ...(pendingSkills ? { skills: pendingSkills } : {}),
+          forum_display_name: (edit as any).forum_display_name,
+          forum_signature: (edit as any).forum_signature,
         }),
       })
       if (!res.ok) throw new Error('Failed to save profile')
       setIsEditing(false)
+      setSaveMessage('Profile saved')
+      setTimeout(() => setSaveMessage(''), 2000)
       try { refreshProfile() } catch {}
     } catch (e) {
       alert('Failed to save profile')
@@ -541,12 +549,16 @@ export default function ActorProfile() {
                 <div className="flex-1">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <h2 className="text-2xl font-heading font-bold">{actorData?.name || ''}</h2>
+                      <h2 className="text-2xl font-heading font-bold flex items-center gap-2">
+                        {(actorData as any)?.forum_display_name || actorData?.name || ''}
+                        {actorData?.is_verified_professional ? (
+                          <span className="inline-flex items-center text-xs text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full">Verified</span>
+                        ) : null}
+                      </h2>
                       <p className="text-gray-600">{actorData?.union || 'Non-Union'}</p>
                     </div>
                     <div className="flex gap-2">
                       <Badge variant="success">Available</Badge>
-                      <Badge variant="secondary">Verified</Badge>
                     </div>
                   </div>
                   
@@ -562,6 +574,19 @@ export default function ActorProfile() {
                         />
                       ) : (
                         <span>{actorData?.location || 'Los Angeles'}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <User className="w-4 h-4 text-gray-400" />
+                      {isEditing ? (
+                        <input
+                          className="border rounded px-2 py-1 text-sm"
+                          value={(edit as any).forum_display_name || ''}
+                          onChange={(e) => setEdit((s) => ({ ...s, forum_display_name: e.target.value }))}
+                          placeholder="Display name"
+                        />
+                      ) : (
+                        <span>{(actorData as any)?.forum_display_name || actorData?.name || ''}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-sm">
