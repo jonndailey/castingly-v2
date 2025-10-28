@@ -900,12 +900,17 @@ export default function ActorProfile() {
               <Card>
               <CardHeader>
                 <CardTitle>
-                  Headshots <span className="text-xs text-gray-500">({headshots.length}/20)</span>
+                  Headshots <span className="text-xs text-gray-500">({headshotTiles.length}/20)</span>
                 </CardTitle>
                 <CardDescription>Professional photos for casting</CardDescription>
               </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
+                    {mediaLoading && (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <div key={`hs-skel-${i}`} className="aspect-[3/4] rounded-lg bg-gray-200 animate-pulse" />
+                      ))
+                    )}
                     {uploadPreviewUrl && (
                       <div className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200">
                         <img src={uploadPreviewUrl} alt="Uploading..." className="h-full w-full object-cover opacity-80" />
@@ -980,6 +985,11 @@ export default function ActorProfile() {
               </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
+                    {mediaLoading && (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <div key={`gal-skel-${i}`} className="aspect-[3/4] rounded-lg bg-gray-200 animate-pulse" />
+                      ))
+                    )}
                     {uploadPreviewUrl && pendingCategory === 'gallery' && (
                       <div className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200">
                         <img src={uploadPreviewUrl} alt="Uploading..." className="h-full w-full object-cover opacity-80" />
