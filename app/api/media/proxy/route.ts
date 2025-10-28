@@ -65,9 +65,18 @@ export async function GET(request: NextRequest) {
         return false
       })
       const prefer = byVariant || files.find((f: any) => /\.(jpe?g|png|webp)$/i.test(String(f.name||String(f.original_filename||'')))) || files[0]
-      const targetUrl = (prefer as any)?.signed_url || (prefer as any)?.public_url
-      if (targetUrl && typeof targetUrl === 'string') {
-        return new Response(null, { status: 302, headers: { Location: targetUrl, ...cacheHeaders } })
+      const signedUrl = (prefer as any)?.signed_url as string | undefined
+      const publicUrl = (prefer as any)?.public_url as string | undefined
+      if (isPublicBucket) {
+        // Prefer our DMAPI serve path so Cloudflare can cache at edge
+        const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
+        const tail = String(path || '').replace(/^.*?\//, '')
+        const namePart = encodeURIComponent(String(prefer?.name || prefer?.original_filename || name))
+        const serveUrl = `${base}/api/serve/files/${encodeURIComponent(String(userId))}/castingly-public/${tail ? tail + '/' : ''}${namePart}`
+        return new Response(null, { status: 302, headers: { Location: serveUrl, ...cacheHeaders } })
+      }
+      if (signedUrl || publicUrl) {
+        return new Response(null, { status: 302, headers: { Location: signedUrl || publicUrl!, ...cacheHeaders } })
       }
     } catch (err: any) {
       try { console.error('[media/proxy] listBucketFolder failed:', err?.message || err) } catch {}
