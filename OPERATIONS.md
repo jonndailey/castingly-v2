@@ -150,6 +150,10 @@ Profile & Media diagnostics:
 - `/api/actors/:id` sets `X-Profile-Source: db|fallback|cache` (check in Network tab) and, with `?media=1`, `X-Media-Meta-Count` and `X-Media-Folder-Count`.
 - Server logs media counters per request. Tail with: `pm2 logs castingly-v2 --lines 200`.
 
+Caching for owner views:
+- Self-requests (Authorization userId === :id) respond with `Cache-Control: private, no-store` so PATCHes and uploads reflect immediately.
+- Client hooks (`useActorProfile`, `useActorMedia`) add `cache: 'no-store'` and a `ts` query param to bypass any intermediaries.
+
 Logout:
 - Client posts to `/api/auth/logout` (server→Core) and clears persisted auth, then hard-navigates to `/login`. Ensures full sign-out across tabs.
 
@@ -162,3 +166,20 @@ CLI fallback (server env, supports `DMAPI_API_KEY`):
 ssh dev 'bash -lc "cd ~/apps/castingly-v2 && \
   DMAPI_API_KEY=dmapi_*** node scripts/backfill-media.mjs --user <actor-uuid> --dry"'
 ```
+CDN & DMAPI streaming (images):
+- DMAPI now streams image content for public media via `/api/serve/files/<userId>/castingly-public/...` with HTTP 200 and long-lived Cache-Control. Cloudflare caches these responses at edge (cf-cache-status: HIT after first warm).
+- Private/signed media (castingly-private or `?signed=`) remains BYPASS (no-store).
+- For private-only headshots, DMAPI generates a small public thumbnail (`*_small.webp`, width≈384px) under `castingly-public/actors/<id>/headshots` at upload. A backfill script is available to generate small variants for existing users.
+
+DMAPI host (dmapiapp01) quick refs:
+- Live code path: `/opt/dailey-media-api/releases/<release>/src`
+- Serve route patched: `src/routes/serve.js` — streams image bytes (200) instead of 302 for images.
+- Upload route patched: `src/routes/upload.js` — generates `*_small.webp` for private headshots into `castingly-public`.
+- Backfill scripts:
+  - Per-user: `node scripts/backfill-small-public.mjs <userId>`
+  - All users: `MAX_USERS=0 node scripts/backfill-small-public-all.mjs` (limit with `MAX_USERS`)
+- Restart: `pm2 restart dmapi-backend`
+
+Cloudflare checks (from your workstation):
+- Warm: `curl -I 'https://media.dailey.cloud/api/serve/files/<uid>/castingly-public/actors/<uid>/headshots/<name>.webp'`
+- Repeat: expect `cf-cache-status: HIT`, `Cache-Control: public, max-age=31536000, immutable`.

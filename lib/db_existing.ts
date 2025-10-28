@@ -29,6 +29,43 @@ export async function query(sql: string, params?: any[]) {
   }
 }
 
+// Lightweight column introspection with memoization to support mixed schemas safely
+type ColumnsCacheKey = string
+const columnsCache = new Map<ColumnsCacheKey, { cols: Set<string>; ts: number }>()
+const COLS_TTL_MS = 5 * 60 * 1000
+
+async function getCurrentDbName(): Promise<string | undefined> {
+  try {
+    const rows = (await query('SELECT DATABASE() AS db')) as Array<{ db: string }>
+    return rows?.[0]?.db || undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function getTableColumns(table: string): Promise<Set<string>> {
+  const db = await getCurrentDbName()
+  const key = `${db || 'default'}:${table}`
+  const now = Date.now()
+  const cached = columnsCache.get(key)
+  if (cached && now - cached.ts < COLS_TTL_MS) return cached.cols
+  try {
+    const cols = (await query(
+      db
+        ? 'SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?'
+        : 'SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?',
+      db ? [db, table] : [table]
+    )) as Array<{ name: string }>
+    const set = new Set((cols || []).map((c) => c.name))
+    columnsCache.set(key, { cols: set, ts: now })
+    return set
+  } catch {
+    const empty = new Set<string>()
+    columnsCache.set(key, { cols: empty, ts: now })
+    return empty
+  }
+}
+
 // Actor-specific queries adapted for existing production schema (users + profiles + media)
 export const actors = {
   // Get all actors with basic info (prefer modern schema; fallback to legacy)
@@ -66,6 +103,8 @@ export const actors = {
   // Get single actor with full profile (prefer modern; fallback legacy)
   async getById(id: string) {
     try {
+      const pCols = await getTableColumns('profiles')
+      const resumeSel = pCols.has('resume_url') ? 'p.resume_url,' : ''
       const rows = (await query(
         `SELECT u.id, u.email, u.name, u.role, u.avatar_url AS profile_image,
                 u.email_verified, u.forum_display_name, u.forum_signature,
@@ -73,7 +112,7 @@ export const actors = {
                 u.created_at, u.updated_at,
                 u.phone,
                 p.bio, p.location, p.height, p.eye_color, p.hair_color,
-                p.skills, p.website, p.instagram, p.twitter, p.age_range, p.resume_url,
+                p.skills, p.website, p.instagram, p.twitter, p.age_range, ${resumeSel}
                 p.metadata AS profile_metadata
          FROM users u
          LEFT JOIN profiles p ON p.user_id = u.id
@@ -132,6 +171,8 @@ export const actors = {
   // Get single user profile without restricting role (owner/admin views)
   async getByIdAnyRole(id: string) {
     try {
+      const pCols = await getTableColumns('profiles')
+      const resumeSel = pCols.has('resume_url') ? 'p.resume_url,' : ''
       const rows = (await query(
         `SELECT u.id, u.email, u.name, u.role, u.avatar_url AS profile_image,
                 u.email_verified, u.forum_display_name, u.forum_signature,
@@ -139,7 +180,7 @@ export const actors = {
                 u.created_at, u.updated_at,
                 u.phone,
                 p.bio, p.location, p.height, p.eye_color, p.hair_color,
-                p.skills, p.website, p.instagram, p.twitter, p.age_range, p.resume_url,
+                p.skills, p.website, p.instagram, p.twitter, p.age_range, ${resumeSel}
                 p.metadata AS profile_metadata
          FROM users u
          LEFT JOIN profiles p ON p.user_id = u.id

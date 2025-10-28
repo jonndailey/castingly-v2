@@ -86,12 +86,13 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
 
         const qs = new URLSearchParams()
         if (options?.includeMedia) qs.set('media', '1')
-        const response = await fetch(`/api/actors/${id}?${qs.toString()}`, {
+        const response = await fetch(`/api/actors/${id}?${qs.toString()}${qs.toString() ? '&' : ''}ts=${Date.now()}` , {
           headers: token
             ? {
                 Authorization: `Bearer ${token}`,
               }
             : undefined,
+          cache: 'no-store',
         })
 
         if (!response.ok) {
@@ -134,8 +135,9 @@ export function useActorMedia(actorId?: string) {
           setError('No actor ID provided')
           return
         }
-        const response = await fetch(`/api/actors/${id}?media=1`, {
+        const response = await fetch(`/api/actors/${id}?media=1&ts=${Date.now()}` , {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          cache: 'no-store',
         })
         if (!response.ok) throw new Error('Failed to fetch media')
         const data = await response.json()

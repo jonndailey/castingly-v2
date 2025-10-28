@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { 
@@ -29,6 +29,8 @@ import { Badge } from '@/components/ui/badge'
 import VideoUpload from '@/components/video/video-upload'
 import useAuthStore from '@/lib/store/auth-store'
 
+export const dynamic = 'force-dynamic'
+
 // Mock opportunity data (would come from API based on ID)
 const opportunityData = {
   id: '1',
@@ -52,7 +54,7 @@ const opportunityData = {
   sides: 'Available for download after application'
 }
 
-export default function ActorSubmit() {
+function ActorSubmitInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const opportunityId = searchParams.get('opportunity')
@@ -85,6 +87,7 @@ export default function ActorSubmit() {
   // If no opportunity id, route back to opportunities with a helpful message
   if (!opportunityId) {
     return (
+      <Suspense fallback={null}>
       <AppLayout>
         <PageContent>
           <div className="max-w-md mx-auto text-center py-16">
@@ -96,6 +99,7 @@ export default function ActorSubmit() {
           </div>
         </PageContent>
       </AppLayout>
+      </Suspense>
     )
   }
   
@@ -119,6 +123,7 @@ export default function ActorSubmit() {
   
   if (isSubmitted) {
     return (
+      <Suspense fallback={null}>
       <AppLayout>
         <PageContent>
           <div className="max-w-2xl mx-auto text-center py-12">
@@ -151,12 +156,14 @@ export default function ActorSubmit() {
               </Button>
             </div>
           </div>
-        </PageContent>
+      </PageContent>
       </AppLayout>
+      </Suspense>
     )
   }
   
   return (
+    <Suspense fallback={null}>
     <AppLayout>
       <PageHeader
         title="Submit Application"
@@ -552,6 +559,15 @@ export default function ActorSubmit() {
         </div>
       </PageContent>
     </AppLayout>
+    </Suspense>
+  )
+}
+
+export default function ActorSubmit() {
+  return (
+    <Suspense fallback={null}>
+      <ActorSubmitInner />
+    </Suspense>
   )
 }
 

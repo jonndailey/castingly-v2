@@ -101,6 +101,35 @@ export async function GET(
         if (token) {
           const validated = await daileyCoreAuth.validateToken(token)
           if (validated?.valid && validated.user) {
+            // If requester is self, ensure a minimal DB row exists so we can return from DB path next
+            try {
+              const isSelf = String(validated.user.id) === String(id)
+              if (isSelf) {
+                const email = String(validated.user.email || '')
+                const name = typeof validated.user.name === 'string' && validated.user.name
+                  ? validated.user.name
+                  : (email.split('@')[0] || String(id))
+                await import('@/lib/db_existing').then(async ({ query }) => {
+                  try {
+                    await query(
+                      'INSERT INTO users (id, email, password_hash, name, role, is_active, email_verified) VALUES (?, ?, ?, ?, ?, 1, 1) ON DUPLICATE KEY UPDATE email = VALUES(email), name = VALUES(name)',
+                      [String(id), email || `${id}@castingly.local`, 'core-linked', name, 'actor']
+                    )
+                  } catch {}
+                  try {
+                    await query('INSERT INTO profiles (user_id) VALUES (?) ON DUPLICATE KEY UPDATE user_id = user_id', [String(id)])
+                  } catch {}
+                })
+                try {
+                  const ensured = await actors.getByIdAnyRole(String(id))
+                  if (ensured) {
+                    actor = ensured
+                    profileSource = 'db'
+                  }
+                } catch {}
+              }
+            } catch {}
+            if (!actor) {
             const u = validated.user
             actor = {
               id: String(u.id),
@@ -117,6 +146,7 @@ export async function GET(
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             } as any
+            }
           }
         }
       } catch {
@@ -169,7 +199,7 @@ export async function GET(
     const cached = cache.get(cacheKey)
     if (cached && cached.expires > nowTs) {
       const hdrs = new Headers()
-      hdrs.set('Cache-Control', includeMedia ? 'private, max-age=20' : (includePrivate ? 'private, max-age=10' : 'private, max-age=60'))
+      hdrs.set('Cache-Control', includeMedia ? 'private, max-age=20' : (includePrivate ? 'private, no-store' : 'private, max-age=60'))
       hdrs.set('Vary', 'Authorization')
       hdrs.set('X-Profile-Source', 'cache')
       return NextResponse.json(cached.body, { headers: hdrs })
@@ -481,7 +511,14 @@ export async function GET(
     }
     {
       const hdrs = new Headers()
-      hdrs.set('Cache-Control', includeMedia ? 'private, max-age=20' : (includePrivate ? 'private, max-age=10' : 'private, max-age=60'))
+      // For owner/self views, avoid any caching to ensure immediate reflection after edits/uploads
+      if (includePrivate) {
+        hdrs.set('Cache-Control', 'private, no-store')
+      } else if (includeMedia) {
+        hdrs.set('Cache-Control', 'private, max-age=20')
+      } else {
+        hdrs.set('Cache-Control', 'private, max-age=60')
+      }
       hdrs.set('Vary', 'Authorization')
       hdrs.set('X-Profile-Source', profileSource)
       if (includeMedia) {

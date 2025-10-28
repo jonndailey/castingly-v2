@@ -350,3 +350,13 @@ For issues or questions, please refer to the GitHub repository or contact the de
 **Version**: 2.0.0
 **Last Updated**: September 2024
 **Status**: Active Development
+### CDN & DMAPI Streaming (Images)
+
+- Public images are served via `https://media.dailey.cloud/api/serve/<storage_key>` (e.g., `api/serve/files/<userId>/castingly-public/actors/<id>/headshots/<name>`).
+- DMAPI streams image content with HTTP 200 for public images, enabling Cloudflare edge caching of actual bytes (no 302 redirects). Response headers: `Cache-Control: public, max-age=31536000, immutable`.
+- Private/signed assets continue to bypass cache (`private, no-store`) to preserve security.
+- Thumbnails: prefer `*_small.webp` (≈384px) and `*_thumbnail.webp` for grids; open large/original on click (lightbox).
+
+Cloudflare (Free/Pro) rules to use:
+- Cache Everything for `media.dailey.cloud/api/serve/.../castingly-public/...` (long TTLs), BYPASS for `.../castingly-private/...` or when the URL has `?signed=`.
+- If on Pro, you can use Image Resizing (`cdn-cgi/image`) for responsive thumbs; otherwise use pre-generated `*_small.webp`.

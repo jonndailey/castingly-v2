@@ -88,10 +88,56 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
       }
     } catch {}
 
+    // Fallback: resolve from private headshots (time-limited signed URLs)
+    try {
+      const folder = await listBucketFolder({
+        bucketId: 'castingly-private',
+        userId: String(actorId),
+        path: `actors/${actorId}/headshots`,
+      })
+      const files = Array.isArray(folder?.files) ? folder.files : []
+      if (files.length > 0) {
+        const pick = (arr: any[]) =>
+          arr.find((f) => /large\./i.test(String(f.name || ''))) ||
+          arr.find((f) => /medium\./i.test(String(f.name || ''))) ||
+          arr.find((f) => /small\./i.test(String(f.name || ''))) ||
+          arr[0]
+        const chosen: any = pick(files)
+        const direct = chosen?.signed_url || chosen?.thumbnail_signed_url || chosen?.url || null
+        if (direct) {
+          // Persist a short proxy pointer for subsequent loads
+          try {
+            const namePart = String(chosen?.name || '')
+            if (namePart) {
+              const qp = new URLSearchParams()
+              qp.set('bucket', 'castingly-private')
+              qp.set('userId', String(actorId))
+              qp.set('path', `actors/${actorId}/headshots`)
+              qp.set('name', namePart)
+              if (chosen?.signed_url) qp.set('signed', String(chosen.signed_url))
+              const proxy = `/api/media/proxy?${qp.toString()}`
+              await query('UPDATE users SET avatar_url = ? WHERE id = ?', [proxy, actorId])
+              try {
+                await query(
+                  `UPDATE profiles 
+                   SET metadata = JSON_SET(
+                     COALESCE(metadata, JSON_OBJECT()),
+                     '$.avatar', JSON_OBJECT('bucket', ?, 'userId', ?, 'path', ?, 'name', ?)
+                   )
+                   WHERE user_id = ?`,
+                  ['castingly-private', String(actorId), `actors/${actorId}/headshots`, namePart, String(actorId)]
+                )
+              } catch {}
+            }
+          } catch {}
+          return new Response(null, { status: 302, headers: { Location: direct, ...cacheHeaders } })
+        }
+      }
+    } catch {}
+
     // Fallback: UI-Avatars
     return new Response(null, { status: 302, headers: { Location: fallback, ...cacheHeaders } })
   } catch {
     return new Response('Avatar lookup failed', { status: 500 })
   }
 }
-

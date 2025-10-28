@@ -22,6 +22,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ProfileAvatar } from '@/components/ui/avatar'
+import Head from 'next/head'
 import useAuthStore from '@/lib/store/auth-store'
 import { useActorProfile } from '@/lib/hooks/useActorData'
 
@@ -140,6 +141,9 @@ export default function ActorDashboard() {
   
   if (!user) return null
   
+  // Build a safe avatar URL we can preload immediately (does not depend on profile fetch)
+  const safeAvatarHref = `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}`
+
   if (loading) {
     return (
       <AppLayout>
@@ -189,6 +193,10 @@ export default function ActorDashboard() {
   
   return (
     <AppLayout>
+      {/* Preload the avatar so it starts fetching as early as possible */}
+      <Head>
+        <link rel="preload" as="image" href={safeAvatarHref} fetchPriority="high" />
+      </Head>
       <PageHeader
         title={`Welcome back, ${user.name}!`}
         subtitle="Here's what's happening with your casting journey"
@@ -268,12 +276,12 @@ export default function ActorDashboard() {
                     editable
                     size="xl"
                     alt={profile.name}
-                    // Prioritize a URL available immediately after login to avoid first-paint delay.
+                    // Make the safe avatar (server-resolved redirect) the first real image for instant paint.
                     src={
-                      localAvatar ||
-                      (useAuthStore.getState().user?.avatar_url || undefined) ||
-                      profile.avatar_url ||
-                      `/api/media/avatar/safe/${encodeURIComponent(String(user?.id || ''))}`
+                      (localAvatar || undefined) ||
+                      safeAvatarHref ||
+                      (user?.avatar_url || undefined) ||
+                      (profile.avatar_url || undefined)
                     }
                     fallback={profile.name}
                     onUpload={handleAvatarUpload}

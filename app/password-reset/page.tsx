@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -8,7 +8,9 @@ import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-export default function PasswordResetPage() {
+export const dynamic = 'force-dynamic'
+
+function PasswordResetPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const token = searchParams.get('token')
@@ -128,18 +130,21 @@ export default function PasswordResetPage() {
   // Loading state
   if (isValidating) {
     return (
+      <Suspense fallback={null}>
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-teal-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Validating reset token...</p>
         </div>
       </div>
+      </Suspense>
     )
   }
 
   // Success state
   if (isSuccess) {
     return (
+      <Suspense fallback={null}>
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-teal-50 flex items-center justify-center p-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -160,12 +165,14 @@ export default function PasswordResetPage() {
           </div>
         </motion.div>
       </div>
+      </Suspense>
     )
   }
 
   // Error state or invalid token
   if (!isValidToken) {
     return (
+      <Suspense fallback={null}>
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-teal-50 flex items-center justify-center p-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -186,11 +193,13 @@ export default function PasswordResetPage() {
           </div>
         </motion.div>
       </div>
+      </Suspense>
     )
   }
 
   // Main password reset form
   return (
+    <Suspense fallback={null}>
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-teal-50 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -314,5 +323,14 @@ export default function PasswordResetPage() {
         </div>
       </motion.div>
     </div>
+    </Suspense>
+  )
+}
+
+export default function PasswordResetPage() {
+  return (
+    <Suspense fallback={null}>
+      <PasswordResetPageInner />
+    </Suspense>
   )
 }

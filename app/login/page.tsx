@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
@@ -9,7 +9,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import useAuthStore from '@/lib/store/auth-store'
 
-export default function LoginPage() {
+export const dynamic = 'force-dynamic'
+
+function LoginPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { login, completeMfa, pendingMfa, clearPendingMfa, isLoading, error, clearError } = useAuthStore()
@@ -208,6 +210,7 @@ export default function LoginPage() {
   }
   
   return (
+    <Suspense fallback={null}>
     <div className="min-h-screen flex">
       {/* Left side - Login form */}
       <div className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:px-8">
@@ -539,5 +542,14 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+    </Suspense>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
   )
 }

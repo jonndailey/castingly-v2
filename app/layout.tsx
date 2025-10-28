@@ -36,6 +36,12 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://s3.us-east-va.io.cloud.ovh.us" />
         <link rel="preconnect" href="https://media.dailey.cloud" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://media.dailey.cloud" />
+        {/* Fallback avatar service preconnect (used when no headshot yet) */}
+        <link rel="preconnect" href="https://ui-avatars.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://ui-avatars.com" />
+        {/* Google Fonts preconnect to reduce CSS/Font waterfall */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body className="h-full bg-gray-50 overflow-x-hidden">
         <ClientProvider>
