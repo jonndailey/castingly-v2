@@ -519,10 +519,10 @@ export default function ActorProfile() {
                 <div className="flex flex-col items-center">
                   <Avatar
                     src={
-                      // Owner: prefer precomputed avatar_url (server) or first small headshot when media loads
+                      // Owner: prefer server avatar_url, then small tile, then safe fallback
                       (user?.id && actorData?.id && String(user.id) === String(actorData.id))
-                        ? (actorData?.avatar_url || headshotTiles?.[0]?.thumbSrc || undefined)
-                        : (actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(user?.id || ''))}`)
+                        ? (actorData?.avatar_url || headshotTiles?.[0]?.thumbSrc || `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`)
+                        : (actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`)
                     }
                     alt={actorData?.name || ''}
                     fallback={actorData?.name || ''}

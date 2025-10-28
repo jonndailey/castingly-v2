@@ -332,8 +332,17 @@ export async function GET(
       media = categoriseLegacyMedia(legacyMedia)
     }
 
-    const avatarFromDmapi =
-      media.headshots?.[0]?.url || media.headshots?.[0]?.signed_url
+    let avatarFromDmapi = media.headshots?.[0]?.url || media.headshots?.[0]?.signed_url
+    if (!avatarFromDmapi) {
+      try {
+        // Lightweight headshot lookup even when includeMedia=false
+        const quick = await listActorDmapiFiles(String(actor.id), { limit: 1, category: 'headshot', order: 'desc', sort: 'uploaded_at' })
+        const f: any = Array.isArray((quick as any)?.files) && (quick as any).files[0]
+        if (f) {
+          avatarFromDmapi = f.signed_url || f.public_url || f.url || null
+        }
+      } catch {}
+    }
 
     const legacyHeadshots = legacyMedia.filter(
       (record) => record.media_type === 'headshot'
