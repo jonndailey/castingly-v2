@@ -243,6 +243,29 @@ DMAPI prerequisite (small change):
 - Clicking a gallery tile opens the full image (original if present; otherwise the largest available variant) from DMAPI.
 - Variants follow the `_small|_medium|_large` naming convention; the UI groups variants by base name and picks the best for thumbnail and full views.
 
+### Media Categorization
+
+- Category priority: folder path > first tag > metadata.category (ignoring `other`/`image`) > mime.
+- Folders containing `gallery` → gallery; `headshot` → headshot; `reel`, `voice`, `resume`, `self-tape`, `document` map respectively.
+- Older items without metadata are still surfaced via folder listing fallbacks (public + private headshots, gallery).
+
+### Avatars & First Paint
+
+- Dashboard avatar priority: `local preview` → `store user.avatar_url` (from login) → `server profile avatar_url` → `safe avatar proxy`.
+- Profile avatar priority: `server avatar_url` → first small headshot tile → safe avatar proxy.
+- Large avatars load with `fetchPriority=high` and `loading=eager` to remove first-paint delay.
+
+### Profile Updates
+
+- PATCH `/api/actors/:id/profile` updates both `users` and `profiles` fields.
+- GET `/api/actors/:id` returns full users+profiles for self (any role). Edits reflect immediately.
+- Response headers: `X-Profile-Source: db|fallback|cache` and, with `?media=1`, `X-Media-Meta-Count`/`X-Media-Folder-Count` for diagnostics.
+
+### Deleting Media
+
+- DELETE `/api/media/actor/:actorId/files/:fileId` accepts either a DMAPI id or a filename.
+- If a filename is provided, the server resolves it within common actor folders and deletes by the actual DMAPI id.
+
 ## 📄 API Structure (Planned)
 
 ### Endpoints

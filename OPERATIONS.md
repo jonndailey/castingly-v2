@@ -146,6 +146,17 @@ Gallery rendering:
 - The profile/gallery grid shows only small variants to improve load time.
 - Clicking any image opens the full-size image from DMAPI (original if present; else the largest variant).
 
+Profile & Media diagnostics:
+- `/api/actors/:id` sets `X-Profile-Source: db|fallback|cache` (check in Network tab) and, with `?media=1`, `X-Media-Meta-Count` and `X-Media-Folder-Count`.
+- Server logs media counters per request. Tail with: `pm2 logs castingly-v2 --lines 200`.
+
+Logout:
+- Client posts to `/api/auth/logout` (server→Core) and clears persisted auth, then hard-navigates to `/login`. Ensures full sign-out across tabs.
+
+DMAPI client caveats:
+- For folder listings, DMAPI expects `path` to include the userId as the first segment. We prefix `<userId>/…` when calling `/api/buckets/:bucket/files`.
+- We no longer override actor userId with `DMAPI_LIST_USER_ID` in `listActorFiles`.
+
 CLI fallback (server env, supports `DMAPI_API_KEY`):
 ```bash
 ssh dev 'bash -lc "cd ~/apps/castingly-v2 && \
