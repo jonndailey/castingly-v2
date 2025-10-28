@@ -268,8 +268,13 @@ export default function ActorDashboard() {
                     editable
                     size="xl"
                     alt={profile.name}
-                    // Prefer server-provided direct URL; avoid extra client roundtrips
-                    src={localAvatar || profile.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(user?.id || ''))}`}
+                    // Prioritize a URL available immediately after login to avoid first-paint delay.
+                    src={
+                      localAvatar ||
+                      (useAuthStore.getState().user?.avatar_url || undefined) ||
+                      profile.avatar_url ||
+                      `/api/media/avatar/safe/${encodeURIComponent(String(user?.id || ''))}`
+                    }
                     fallback={profile.name}
                     onUpload={handleAvatarUpload}
                   />
