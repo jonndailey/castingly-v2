@@ -104,6 +104,39 @@ export default function PublicTalentProfilePage() {
     }
   }
 
+  // More resilient username resolver (accepts hyphenless, space/dot variants; tries search first)
+  const findActorByUsernameResilient = async (username: string): Promise<any> => {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
+    const wantedHyphen = norm(username)
+    const wantedFlat = flat(username)
+
+    const fetchActorFull = async (id: string) => {
+      const r = await fetch(`/api/actors/${id}`, token ? { headers: { Authorization: `Bearer ${token}` } } as any : undefined)
+      if (!r.ok) throw new Error('Failed to fetch actor details')
+      return await r.json()
+    }
+
+    const tryList = async (url: string) => {
+      const res = await fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } as any : undefined)
+      if (!res.ok) return null
+      const data = await res.json()
+      const list: any[] = Array.isArray(data?.actors) ? data.actors : []
+      for (const a of list) {
+        const name = String(a?.name || '')
+        const sh = norm(name)
+        const sf = flat(name)
+        if (sh === wantedHyphen || sf === wantedFlat) return a
+      }
+      return null
+    }
+
+    let found = await tryList(`/api/actors?search=${encodeURIComponent(username)}&limit=100`)
+    if (!found) found = await tryList('/api/actors?limit=1000')
+    if (!found) throw new Error('Actor not found')
+    return fetchActorFull(found.id)
+  }
+
   useEffect(() => {
     const loadProfile = async () => {
       try {
@@ -118,7 +151,12 @@ export default function PublicTalentProfilePage() {
           return
         }
 
-        const actorData = await findActorByUsername(usernameParam)
+        let actorData: any
+        try {
+          actorData = await findActorByUsernameResilient(usernameParam)
+        } catch {
+          actorData = await findActorByUsername(usernameParam)
+        }
         
         const headshotEntries = Array.isArray(actorData.media?.headshots)
           ? actorData.media.headshots.filter((entry: any) =>

@@ -391,7 +391,7 @@ export async function listBucketFolder(options: {
 
   return serviceFetch<BucketFolderResponse>(
     `/api/buckets/${encodeURIComponent(options.bucketId)}/files?${searchParams.toString()}`,
-    { timeoutMs: 2500 }
+    { timeoutMs: 6000 }
   ).then((data) => {
     if (Array.isArray(data?.files)) {
       for (const f of data.files) {

@@ -17,7 +17,10 @@ function pickTiles(files: Array<{ name?: string; path?: string }>, actorId: stri
   for (const f of files) {
     const name = String(f?.name || '')
     if (!name) continue
-    const path = String(f?.path || '')
+    const rawPath = String(f?.path || '')
+    const p1 = rawPath.replace(/^files\/[a-f0-9-]+\/castingly-public\//i, '')
+    const p2 = p1.replace(new RegExp(`^${actorId}/`), '')
+    const path = p2
     const lower = name.toLowerCase()
     if (!/\.(jpe?g|png|webp)$/i.test(lower)) continue
     const m = lower.match(/^(.*?)(?:_(large|medium|small|thumbnail))?(\.[^.]+)$/)
@@ -40,17 +43,21 @@ function pickTiles(files: Array<{ name?: string; path?: string }>, actorId: stri
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ actorId: string }> }) {
   try {
+    const t0 = Date.now()
     const { actorId } = await ctx.params
     if (!actorId) return NextResponse.json({ error: 'actorId required' }, { status: 400 })
     const folder = await listBucketFolder({ bucketId: 'castingly-public', userId: String(actorId), path: `actors/${actorId}/gallery` })
     const files = Array.isArray((folder as any)?.files) ? (folder as any).files : []
     const tiles = pickTiles(files, String(actorId))
+    const dur = Date.now() - t0
     const res = NextResponse.json({ tiles })
     res.headers.set('Cache-Control', 'private, max-age=20')
     res.headers.set('Vary', 'Authorization')
+    res.headers.set('X-Tiles-Count', String(tiles.length))
+    res.headers.set('X-Tiles-Duration', `${dur}ms`)
+    try { console.info('[tiles/gallery]', { actorId, count: tiles.length, ms: dur }) } catch {}
     return res
   } catch (e) {
     return NextResponse.json({ tiles: [] })
   }
 }
-

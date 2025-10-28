@@ -185,13 +185,6 @@ export default function ActorProfile() {
 
   // Group variants and pick small for grid, full for lightbox
   type VariantTile = { id?: string; thumbSrc: string; fullSrc: string; alt: string }
-  function isPublicEntry(entry: any): boolean {
-    try {
-      const v = String((entry?.visibility || entry?.metadata?.access || '').toString()).toLowerCase()
-      const b = String((entry?.metadata?.bucketId || entry?.metadata?.bucket_id || '')).toLowerCase()
-      return v === 'public' || b === 'castingly-public'
-    } catch { return false }
-  }
   function splitVariant(name?: string | null) {
     const n = String(name || '').toLowerCase()
     const m = n.match(/^(.*?)(?:_(large|medium|small|thumbnail))?(\.[^.]+)?$/)
@@ -223,7 +216,11 @@ export default function ActorProfile() {
     const tiles: VariantTile[] = []
     for (const [base, g] of groups.entries()) {
       // Thumb preference: public small > small > thumbnail > medium > original > large
-      const thumbEntry = (g.small && isPublicEntry(g.small) ? g.small : null) || g.small || g.thumbnail || g.medium || g.original || g.large
+      const smallIsPublic = !!(g.small && (
+        String(((g.small as any)?.visibility || (g.small as any)?.metadata?.access || '')).toLowerCase() === 'public' ||
+        String(((g.small as any)?.metadata?.bucketId || (g.small as any)?.metadata?.bucket_id || '')).toLowerCase() === 'castingly-public'
+      ))
+      const thumbEntry = (g.small && smallIsPublic ? g.small : null) || g.small || g.thumbnail || g.medium || g.original || g.large
       // Full preference: original > large > medium > small > thumbnail
       const fullEntry = g.original || g.large || g.medium || g.small || g.thumbnail
       if (!thumbEntry || !fullEntry) continue
@@ -1499,7 +1496,9 @@ function getMediaUrl(entry: ActorMediaEntry | { url?: string | null; signed_url?
   const signed: string | null = (entry as any).signed_url || null
   const isServe = typeof url === 'string' && (/^\/?api\/serve\//.test(url) || /media\.dailey\.cloud\/api\/serve\//.test(url))
   const isProxy = typeof url === 'string' && url.startsWith('/api/media/proxy?')
-  const publicEntry = isPublicEntry(entry as any)
+  const visibility = String(((entry as any)?.visibility || (entry as any)?.metadata?.access || '')).toLowerCase()
+  const bucket = String(((entry as any)?.metadata?.bucketId || (entry as any)?.metadata?.bucket_id || '')).toLowerCase()
+  const publicEntry = visibility === 'public' || bucket === 'castingly-public'
   // Prefer edge-cached serve URL for public entries when available
   let chosen: string | null = null
   if ((isServe || isProxy) && url && publicEntry) {

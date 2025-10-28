@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
         // Prefer our DMAPI serve path so Cloudflare can cache at edge
         const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
         const tail = String(path || '').replace(/^.*?\//, '')
-        const namePart = encodeURIComponent(String(prefer?.name || prefer?.original_filename || name))
+        const namePart = encodeURIComponent(String((prefer as any)?.name || (prefer as any)?.original_filename || name))
         const serveUrl = `${base}/api/serve/files/${encodeURIComponent(String(userId))}/castingly-public/${tail ? tail + '/' : ''}${namePart}`
         return new Response(null, { status: 302, headers: { Location: serveUrl, ...cacheHeaders } })
       }
