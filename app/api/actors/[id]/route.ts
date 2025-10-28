@@ -509,22 +509,45 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
     // Prefer our proxy URL so we can robustly resolve and redirect
     const bucketId = String((metadata.bucketId || (metadata as any).bucket_id || '') || '').trim()
     const folderPath = String((metadata.folderPath || (metadata as any).folder_path || '') || '').trim()
-    const name = String(file.original_filename || '').trim()
-    const proxyUrl = bucketId && actorId && name
+    const originalName = String(file.original_filename || '').trim()
+    const storageKey: string | undefined = (file as any)?.storage_key
+    const storageName = typeof storageKey === 'string' && storageKey.includes('/')
+      ? storageKey.split('/').pop() || ''
+      : ''
+    // Prefer storage object name for robust proxying; fall back to original filename
+    const proxyName = (storageName || originalName || '').trim()
+    const proxyUrl = bucketId && actorId && proxyName
       ? `/api/media/proxy?bucket=${encodeURIComponent(bucketId)}&userId=${encodeURIComponent(String(actorId))}` +
         (folderPath ? `&path=${encodeURIComponent(folderPath)}` : '') +
-        `&name=${encodeURIComponent(name)}`
+        `&name=${encodeURIComponent(proxyName)}`
       : null
+
+    // Detect mismatched direct URLs (signed/public) that point to original filename when
+    // the stored object name differs (common in migrated data). If detected, prefer proxy.
+    const directUrlCandidate: string | null = (file as any)?.signed_url || (file as any)?.public_url || null
+    const lastSegment = (u?: string | null) => {
+      if (!u || typeof u !== 'string') return ''
+      try {
+        const q = u.split('?')[0]
+        return q.substring(q.lastIndexOf('/') + 1)
+      } catch { return '' }
+    }
+    const directName = lastSegment(directUrlCandidate).toLowerCase()
+    const storageLower = (storageName || '').toLowerCase()
+    const originalLower = (originalName || '').toLowerCase()
+    const directLooksLikeOriginalButNotStorage = Boolean(
+      directUrlCandidate && originalLower && directName === originalLower && storageLower && directName !== storageLower
+    )
 
     const simplified: SimplifiedMedia = {
       id: file.id,
-      // Prefer direct URLs to avoid proxy 302s; fall back to proxy only if needed
-      url: file.signed_url || file.public_url || proxyUrl || null,
-      signed_url: file.signed_url || null,
+      // Prefer direct URLs, but use proxy when we detect filename/key mismatch
+      url: directLooksLikeOriginalButNotStorage ? (proxyUrl || null) : (directUrlCandidate || proxyUrl || null),
+      signed_url: directLooksLikeOriginalButNotStorage ? null : ((file as any)?.signed_url || null),
       thumbnail_url:
-        file.thumbnail_signed_url ||
-        file.thumbnail_url ||
-        file.public_url ||
+        (file as any)?.thumbnail_signed_url ||
+        (file as any)?.thumbnail_url ||
+        (directLooksLikeOriginalButNotStorage ? null : (file as any)?.public_url) ||
         proxyUrl ||
         null,
       name: file.original_filename,
