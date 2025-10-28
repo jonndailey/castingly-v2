@@ -517,13 +517,14 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
 
     const simplified: SimplifiedMedia = {
       id: file.id,
-      url: proxyUrl || file.public_url || null,
+      // Prefer direct URLs to avoid proxy 302s; fall back to proxy only if needed
+      url: file.signed_url || file.public_url || proxyUrl || null,
       signed_url: file.signed_url || null,
       thumbnail_url:
-        proxyUrl ||
-        file.thumbnail_url ||
         file.thumbnail_signed_url ||
+        file.thumbnail_url ||
         file.public_url ||
+        proxyUrl ||
         null,
       name: file.original_filename,
       size: file.file_size,
