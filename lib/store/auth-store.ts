@@ -343,6 +343,16 @@ const useAuthStore = create<AuthState>()(
           originalUser: null,
           error: null 
         })
+
+        // Hard clear persisted auth (all tabs) and transient flags
+        try {
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('castingly-auth')
+            sessionStorage.removeItem('sessionExpired')
+            // Broadcast to other tabs to update immediately
+            window.dispatchEvent(new StorageEvent('storage', { key: 'castingly-auth' }))
+          }
+        } catch {}
       },
 
       updateUser: (userData: Partial<User>) => {

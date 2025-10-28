@@ -119,7 +119,7 @@ export default function ActorProfile() {
     }
   }
   const [isEditing, setIsEditing] = useState(false)
-  const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string; age_range?: string }>({})
+  const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string; age_range?: string; forum_display_name?: string; forum_signature?: string }>({})
   const [saveMessage, setSaveMessage] = useState<string>('')
   const [skillsInput, setSkillsInput] = useState('')
   const [pendingSkills, setPendingSkills] = useState<string[]>([])
@@ -551,7 +551,7 @@ export default function ActorProfile() {
                     <div>
                       <h2 className="text-2xl font-heading font-bold flex items-center gap-2">
                         {(actorData as any)?.forum_display_name || actorData?.name || ''}
-                        {actorData?.is_verified_professional ? (
+                        {(actorData as any)?.is_verified_professional ? (
                           <span className="inline-flex items-center text-xs text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full">Verified</span>
                         ) : null}
                       </h2>

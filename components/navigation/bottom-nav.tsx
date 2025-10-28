@@ -409,9 +409,10 @@ export const SideNav: React.FC = () => {
                   </span>
                 )}
                 <button
-                  onClick={() => {
-                    logout()
-                    window.location.href = '/login'
+                  onClick={async () => {
+                    try { await logout() } catch {}
+                    try { window.localStorage.removeItem('castingly-auth') } catch {}
+                    window.location.assign('/login')
                   }}
                   className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                   title="Logout"
