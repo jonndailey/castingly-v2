@@ -629,14 +629,29 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
       directUrlCandidate && originalLower && directName === originalLower && storageLower && directName !== storageLower
     )
 
+    // Prefer stable edge-cached URL for public items in castingly-public via DMAPI /api/serve
+    let preferredUrl: string | null = null
+    const isPublic = resolveVisibility(file, metadata) === 'public'
+    if (isPublic && bucketId && bucketId.toLowerCase() === 'castingly-public' && actorId) {
+      try {
+        const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
+        if (base) {
+          const tail = folderPath ? `${folderPath.replace(/^\/+|\/+$/g, '')}/` : ''
+          const objName = encodeURIComponent(proxyName || originalName)
+          preferredUrl = `${base}/api/serve/files/${encodeURIComponent(String(actorId))}/castingly-public/${tail}${objName}`
+        }
+      } catch {}
+    }
+
     const simplified: SimplifiedMedia = {
       id: file.id,
-      // Prefer direct URLs; use proxy only when we detect filename/key mismatch
-      url: directLooksLikeOriginalButNotStorage ? (proxyUrl || null) : (directUrlCandidate || proxyUrl || null),
+      // Prefer serve URL for public files; else direct; else proxy on mismatch
+      url: preferredUrl || (directLooksLikeOriginalButNotStorage ? (proxyUrl || null) : (directUrlCandidate || proxyUrl || null)),
       signed_url: directLooksLikeOriginalButNotStorage ? null : ((file as any)?.signed_url || null),
       thumbnail_url:
         (file as any)?.thumbnail_signed_url ||
         (file as any)?.thumbnail_url ||
+        preferredUrl ||
         (directLooksLikeOriginalButNotStorage ? null : (file as any)?.public_url) ||
         proxyUrl ||
         null,
@@ -646,7 +661,7 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
       category,
       uploaded_at: file.uploaded_at,
       metadata,
-      visibility: resolveVisibility(file, metadata),
+      visibility: isPublic ? 'public' : 'private',
     }
 
     initial.all.push(simplified)
