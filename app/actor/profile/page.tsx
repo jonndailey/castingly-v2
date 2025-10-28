@@ -37,7 +37,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { ForumActivityPanel } from '@/components/forum/forum-activity-panel'
 import useAuthStore from '@/lib/store/auth-store'
 import { useActorProfile, useActorMedia, type ActorMediaEntry } from '@/lib/hooks/useActorData'
-import { useSignedHeadshot } from '@/lib/hooks/useSignedHeadshot'
+// import { useSignedHeadshot } from '@/lib/hooks/useSignedHeadshot'
 
 // Mock data for the profile
 const profileData = {
@@ -133,56 +133,64 @@ export default function ActorProfile() {
   const headshots = (media?.headshots ?? []).filter((entry) =>
     Boolean(entry.url || entry.signed_url || entry.thumbnail_url)
   )
-  const { url: signedHeadshotUrl } = useSignedHeadshot(user?.id)
+  // Removed extra roundtrip for signed headshot; we will use
+  // avatar_url from the profile API (server-provided) or the
+  // first available small-variant headshot from media when loaded.
   const headshotGallery = headshots.map((item, index) => ({
     src: getMediaUrl(item) ?? '',
     alt: `Headshot ${index + 1}`,
   }))
   const primaryHeadshot = headshots[0] ?? null
 
-  // Build gallery tiles showing only a single (small) variant per image,
-  // and keep a pointer to the full-sized image for the lightbox.
-  type GalleryTile = { id?: string; thumbSrc: string; fullSrc: string; alt: string }
+  // Group variants and pick small for grid, full for lightbox
+  type VariantTile = { id?: string; thumbSrc: string; fullSrc: string; alt: string }
   function splitVariant(name?: string | null) {
     const n = String(name || '').toLowerCase()
-    const m = n.match(/^(.*?)(?:_(large|medium|small))?(\.[^.]+)?$/)
-    if (!m) return { base: n.replace(/\.[^.]+$/, ''), variant: null as null | 'large' | 'medium' | 'small' }
+    const m = n.match(/^(.*?)(?:_(large|medium|small|thumbnail))?(\.[^.]+)?$/)
+    if (!m) return { base: n.replace(/\.[^.]+$/, ''), variant: null as null | 'large' | 'medium' | 'small' | 'thumbnail' }
     const baseWithExt = m[1] + (m[3] || '')
     const base = baseWithExt.replace(/\.[^.]+$/, '')
     const variant = (m[2] as any) || null
     return { base, variant }
   }
-  const rawGallery = (media?.gallery ?? media?.other ?? []).filter((e) => Boolean(e.url || e.signed_url || e.thumbnail_url))
-  const groups = new Map<string, { small?: typeof rawGallery[number]; medium?: typeof rawGallery[number]; large?: typeof rawGallery[number]; original?: typeof rawGallery[number] }>()
-  for (const item of rawGallery) {
-    const { base, variant } = splitVariant(item.name as any)
-    if (!groups.has(base)) groups.set(base, {})
-    const g = groups.get(base)!
-    if (!variant) {
-      g.original = g.original || item
-    } else if (variant === 'small') {
-      g.small = g.small || item
-    } else if (variant === 'medium') {
-      g.medium = g.medium || item
-    } else if (variant === 'large') {
-      g.large = g.large || item
+  function buildVariantTiles(items: Array<ActorMediaEntry | any>): VariantTile[] {
+    const files = (items || []).filter((e) => Boolean(e?.url || e?.signed_url || e?.thumbnail_url))
+    const groups = new Map<string, { small?: any; medium?: any; large?: any; original?: any; thumbnail?: any }>()
+    for (const item of files) {
+      const { base, variant } = splitVariant(item?.name as any)
+      if (!groups.has(base)) groups.set(base, {})
+      const g = groups.get(base)!
+      if (!variant) {
+        g.original = g.original || item
+      } else if (variant === 'thumbnail') {
+        g.thumbnail = g.thumbnail || item
+      } else if (variant === 'small') {
+        g.small = g.small || item
+      } else if (variant === 'medium') {
+        g.medium = g.medium || item
+      } else if (variant === 'large') {
+        g.large = g.large || item
+      }
     }
-  }
-  const galleryTiles: GalleryTile[] = []
-  for (const [base, g] of groups.entries()) {
-    // Thumb preference: small > medium > original > large
-    const thumbEntry = g.small || g.medium || g.original || g.large
-    // Full preference: original > large > medium > small
-    const fullEntry = g.original || g.large || g.medium || g.small
-    if (!thumbEntry || !fullEntry) continue
-    const tile: GalleryTile = {
-      id: String((fullEntry as any).id || ''),
-      thumbSrc: getMediaUrl(thumbEntry) ?? '',
-      fullSrc: getMediaUrl(fullEntry) ?? '',
-      alt: String((fullEntry as any).name || base)
+    const tiles: VariantTile[] = []
+    for (const [base, g] of groups.entries()) {
+      // Thumb preference: small > thumbnail > medium > original > large
+      const thumbEntry = g.small || g.thumbnail || g.medium || g.original || g.large
+      // Full preference: original > large > medium > small > thumbnail
+      const fullEntry = g.original || g.large || g.medium || g.small || g.thumbnail
+      if (!thumbEntry || !fullEntry) continue
+      const tile: VariantTile = {
+        id: String((fullEntry as any).id || ''),
+        thumbSrc: getMediaUrl(thumbEntry) ?? '',
+        fullSrc: getMediaUrl(fullEntry) ?? '',
+        alt: String((fullEntry as any).name || base),
+      }
+      if (tile.thumbSrc && tile.fullSrc) tiles.push(tile)
     }
-    if (tile.thumbSrc && tile.fullSrc) galleryTiles.push(tile)
+    return tiles
   }
+  const galleryTiles: VariantTile[] = buildVariantTiles((media?.gallery ?? media?.other ?? []))
+  const headshotTiles: VariantTile[] = buildVariantTiles((media?.headshots ?? []))
   
   const openImageModal = useCallback((src: string, alt: string, gallery: Array<{ src: string; alt: string }>, index: number) => {
     setImageGallery(gallery)
@@ -511,9 +519,9 @@ export default function ActorProfile() {
                 <div className="flex flex-col items-center">
                   <Avatar
                     src={
-                      // Owner: wait for signed URL; avoid issuing public proxy fetch
+                      // Owner: prefer precomputed avatar_url (server) or first small headshot when media loads
                       (user?.id && actorData?.id && String(user.id) === String(actorData.id))
-                        ? (signedHeadshotUrl || undefined)
+                        ? (actorData?.avatar_url || headshotTiles?.[0]?.thumbSrc || undefined)
                         : (actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(user?.id || ''))}`)
                     }
                     alt={actorData?.name || ''}
@@ -904,21 +912,21 @@ export default function ActorProfile() {
                         <div className="absolute inset-0 flex items-center justify-center text-white text-sm bg-black/20">Uploading…</div>
                       </div>
                     )}
-                    {headshots.map((photo, index) => (
+                    {headshotTiles.map((photo, index) => (
                       <div
-                        key={photo.id || index}
+                        key={`${photo.fullSrc}-${index}`}
                         className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
                         onClick={() => openImageModal(
-                          getMediaUrl(photo) ?? '',
+                          photo.fullSrc,
                           `Headshot ${index + 1}`,
-                          headshotGallery,
+                          headshotTiles.map(g => ({ src: g.fullSrc, alt: g.alt })),
                           index
                         )}
                       >
                         {photo.id && (
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); deleteMediaFile(String(photo.id)) }}
+                            onClick={(e) => { e.stopPropagation(); deleteMediaFile(String(photo.id!)) }}
                             className="absolute top-2 right-2 z-10 bg-white/80 hover:bg-white text-red-600 rounded-full px-2 py-1 text-xs shadow"
                             title="Delete headshot"
                           >
@@ -926,7 +934,7 @@ export default function ActorProfile() {
                           </button>
                         )}
                         <img
-                          src={getMediaUrl(photo) ?? ''}
+                          src={photo.thumbSrc}
                           alt={`Headshot ${index + 1}`}
                           className="h-full w-full object-cover"
                           loading="lazy"
