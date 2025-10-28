@@ -364,10 +364,8 @@ export async function listActorFiles(
 
   return listFiles({
     ...options,
-    // Always scope by actor's user id so we surface files even when metadata is missing
+    // Always scope by the actual actor's user id
     userId: String(actorId),
-    // In special cases we can override subject scoping via env, but actor scoping takes precedence
-    ...(DMAPI_LIST_USER_ID ? { userId: DMAPI_LIST_USER_ID } : {}),
     metadata,
   })
 }
@@ -386,9 +384,8 @@ export async function listBucketFolder(options: {
     searchParams.set('app_id', DMAPI_APP_ID)
   }
 
-  // DMAPI expects the first segment of `path` to be the user id
-  const normalizedPath = `${options.userId.replace(/\/+$/, '')}/${String(options.path || '')
-    .replace(/^\/+/, '')}`
+  // Use the provided path as-is (e.g., 'actors/<userId>/headshots')
+  const normalizedPath = String(options.path || '').replace(/^\/+/, '')
   searchParams.set('path', normalizedPath)
 
   return serviceFetch<BucketFolderResponse>(
