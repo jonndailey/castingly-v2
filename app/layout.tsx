@@ -30,6 +30,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="h-full">
+      <head>
+        {/* Improve image start-up by preconnecting to S3/DMAPI origins */}
+        <link rel="preconnect" href="https://s3.us-east-va.io.cloud.ovh.us" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://s3.us-east-va.io.cloud.ovh.us" />
+        <link rel="preconnect" href="https://media.dailey.cloud" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://media.dailey.cloud" />
+      </head>
       <body className="h-full bg-gray-50 overflow-x-hidden">
         <ClientProvider>
           <div className="min-h-full">
