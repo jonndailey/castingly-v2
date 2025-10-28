@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { daileyCoreAuth } from '@/lib/auth/dailey-core'
-import { deleteFile } from '@/lib/server/dmapi-service'
+import { deleteFile, listBucketFolder } from '@/lib/server/dmapi-service'
 import jwt from 'jsonwebtoken'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
@@ -47,8 +47,34 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    await deleteFile(fileId)
-    return NextResponse.json({ success: true })
+    // First try delete by DMAPI id
+    try {
+      await deleteFile(fileId)
+      return NextResponse.json({ success: true })
+    } catch (e) {
+      // Fallback: try to resolve by name within common folders for this actor
+      const name = fileId
+      const userId = String(actorId)
+      const candidates: Array<{ bucketId: string; path: string }> = [
+        { bucketId: 'castingly-public', path: `actors/${userId}/headshots` },
+        { bucketId: 'castingly-private', path: `actors/${userId}/headshots` },
+        { bucketId: 'castingly-public', path: `actors/${userId}/gallery` },
+        { bucketId: 'castingly-private', path: `actors/${userId}/gallery` },
+      ]
+      for (const c of candidates) {
+        try {
+          const folder = await listBucketFolder({ bucketId: c.bucketId, userId, path: c.path, includeAppId: true }) as any
+          const files = Array.isArray(folder?.files) ? folder.files : []
+          const match = files.find((it: any) => String(it?.name || '').toLowerCase() === String(name).toLowerCase())
+          const dmapiId = match?.id
+          if (dmapiId) {
+            await deleteFile(dmapiId)
+            return NextResponse.json({ success: true })
+          }
+        } catch {}
+      }
+      throw e
+    }
   } catch (error) {
     console.error('Actor DMAPI delete failed:', error)
     return NextResponse.json(

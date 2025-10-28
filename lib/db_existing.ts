@@ -314,23 +314,47 @@ export const actors = {
 // Authentication helpers for existing schema
 export const auth = {
   async findByEmail(email: string) {
-    const rows = await query(
-      `SELECT 
-          id,
-          email,
-          CONCAT_WS(' ', first_name, last_name) AS name,
-          role,
-          COALESCE(profile_image, '') AS avatar_url,
-          (status = 'active') AS email_verified,
-          forum_display_name,
-          forum_signature,
-          is_verified_professional,
-          is_investor,
-          forum_last_seen_at
-       FROM users WHERE email = ?`,
-      [email.toLowerCase()]
-    ) as any[];
-    return rows[0];
+    // Try modern schema first (name/avatar_url, boolean email_verified)
+    try {
+      const rowsModern = await query(
+        `SELECT 
+            id,
+            email,
+            name,
+            role,
+            avatar_url,
+            email_verified,
+            forum_display_name,
+            forum_signature,
+            is_verified_professional,
+            is_investor,
+            forum_last_seen_at
+         FROM users WHERE email = ?`,
+        [email.toLowerCase()]
+      ) as any[]
+      if (rowsModern && rowsModern[0]) return rowsModern[0]
+    } catch {}
+    // Fallback to legacy schema (first_name/last_name, status)
+    try {
+      const rowsLegacy = await query(
+        `SELECT 
+            id,
+            email,
+            CONCAT_WS(' ', first_name, last_name) AS name,
+            role,
+            COALESCE(profile_image, '') AS avatar_url,
+            (status = 'active') AS email_verified,
+            forum_display_name,
+            forum_signature,
+            is_verified_professional,
+            is_investor,
+            forum_last_seen_at
+         FROM users WHERE email = ?`,
+        [email.toLowerCase()]
+      ) as any[]
+      return rowsLegacy[0]
+    } catch {}
+    return undefined as any
   },
 
   async verifyPassword(email: string, password: string) {
