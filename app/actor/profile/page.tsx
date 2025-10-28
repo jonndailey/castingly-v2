@@ -140,13 +140,49 @@ export default function ActorProfile() {
   }))
   const primaryHeadshot = headshots[0] ?? null
 
-  const galleryImages = (media?.gallery ?? media?.other ?? [])
-    .filter((entry) => Boolean(entry.url || entry.signed_url))
-    .map((item, index) => ({
-      id: item.id as unknown as string | undefined,
-      src: getMediaUrl(item) ?? '',
-      alt: item.name || `Gallery ${index + 1}`,
-    }))
+  // Build gallery tiles showing only a single (small) variant per image,
+  // and keep a pointer to the full-sized image for the lightbox.
+  type GalleryTile = { id?: string; thumbSrc: string; fullSrc: string; alt: string }
+  function splitVariant(name?: string | null) {
+    const n = String(name || '').toLowerCase()
+    const m = n.match(/^(.*?)(?:_(large|medium|small))?(\.[^.]+)?$/)
+    if (!m) return { base: n.replace(/\.[^.]+$/, ''), variant: null as null | 'large' | 'medium' | 'small' }
+    const baseWithExt = m[1] + (m[3] || '')
+    const base = baseWithExt.replace(/\.[^.]+$/, '')
+    const variant = (m[2] as any) || null
+    return { base, variant }
+  }
+  const rawGallery = (media?.gallery ?? media?.other ?? []).filter((e) => Boolean(e.url || e.signed_url || e.thumbnail_url))
+  const groups = new Map<string, { small?: typeof rawGallery[number]; medium?: typeof rawGallery[number]; large?: typeof rawGallery[number]; original?: typeof rawGallery[number] }>()
+  for (const item of rawGallery) {
+    const { base, variant } = splitVariant(item.name as any)
+    if (!groups.has(base)) groups.set(base, {})
+    const g = groups.get(base)!
+    if (!variant) {
+      g.original = g.original || item
+    } else if (variant === 'small') {
+      g.small = g.small || item
+    } else if (variant === 'medium') {
+      g.medium = g.medium || item
+    } else if (variant === 'large') {
+      g.large = g.large || item
+    }
+  }
+  const galleryTiles: GalleryTile[] = []
+  for (const [base, g] of groups.entries()) {
+    // Thumb preference: small > medium > original > large
+    const thumbEntry = g.small || g.medium || g.original || g.large
+    // Full preference: original > large > medium > small
+    const fullEntry = g.original || g.large || g.medium || g.small
+    if (!thumbEntry || !fullEntry) continue
+    const tile: GalleryTile = {
+      id: String((fullEntry as any).id || ''),
+      thumbSrc: getMediaUrl(thumbEntry) ?? '',
+      fullSrc: getMediaUrl(fullEntry) ?? '',
+      alt: String((fullEntry as any).name || base)
+    }
+    if (tile.thumbSrc && tile.fullSrc) galleryTiles.push(tile)
+  }
   
   const openImageModal = useCallback((src: string, alt: string, gallery: Array<{ src: string; alt: string }>, index: number) => {
     setImageGallery(gallery)
@@ -930,11 +966,11 @@ export default function ActorProfile() {
                         <div className="absolute inset-0 flex items-center justify-center text-white text-sm bg-black/20">Uploading…</div>
                       </div>
                     )}
-                    {galleryImages.map((photo, index) => (
+                    {galleryTiles.map((photo, index) => (
                       <div
-                        key={`${photo.src}-${index}`}
+                        key={`${photo.fullSrc}-${index}`}
                         className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => openImageModal(photo.src, photo.alt, galleryImages.map(g => ({ src: g.src, alt: g.alt })), index)}
+                        onClick={() => openImageModal(photo.fullSrc, photo.alt, galleryTiles.map(g => ({ src: g.fullSrc, alt: g.alt })), index)}
                       >
                         {photo.id && (
                           <button
@@ -947,7 +983,7 @@ export default function ActorProfile() {
                           </button>
                         )}
                         <img
-                          src={photo.src}
+                          src={photo.thumbSrc}
                           alt={photo.alt}
                           className="h-full w-full object-cover"
                           loading="lazy"

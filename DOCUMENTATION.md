@@ -237,6 +237,12 @@ An admin route normalizes legacy imports so the app can use fast metadata lookup
 DMAPI prerequisite (small change):
 - Either enable `/api/files` listing for `app_id=castingly` so user-scoped queries return DB ids, or add a `storage_key` lookup filter. The backfill route will then PATCH ids directly.
 
+### Gallery Images (variants)
+
+- Grid displays only the small variant to keep layouts fast and uniform.
+- Clicking a gallery tile opens the full image (original if present; otherwise the largest available variant) from DMAPI.
+- Variants follow the `_small|_medium|_large` naming convention; the UI groups variants by base name and picks the best for thumbnail and full views.
+
 ## 📄 API Structure (Planned)
 
 ### Endpoints

@@ -142,6 +142,10 @@ Notes and prerequisites:
   - add a lookup filter by `storage_key` to resolve ids. Once one of these is available, the backfill route will PATCH ids directly (it already throttles and retries).
 - Until the above change, the route will enumerate candidates from bucket folders and report totals, but PATCH may return rate-limit or endpoint-not-found errors.
 
+Gallery rendering:
+- The profile/gallery grid shows only small variants to improve load time.
+- Clicking any image opens the full-size image from DMAPI (original if present; else the largest variant).
+
 CLI fallback (server env, supports `DMAPI_API_KEY`):
 ```bash
 ssh dev 'bash -lc "cd ~/apps/castingly-v2 && \

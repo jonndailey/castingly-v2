@@ -7,7 +7,9 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url)
     const bucket = url.searchParams.get('bucket')
     const userId = url.searchParams.get('userId')
-    const path = url.searchParams.get('path') || ''
+    // Accept both raw and percent-encoded path (e.g., 'actors/<id>/headshots' or 'actors%2F<id>%2Fheadshots')
+    const rawPath = url.searchParams.get('path') || ''
+    const path = (() => { try { return decodeURIComponent(rawPath) } catch { return rawPath } })()
     const name = url.searchParams.get('name') || ''
     const signed = url.searchParams.get('signed') || ''
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { listFiles as serviceListFiles, updateFileMetadata, listBucketFolder as serviceListBucketFolder } from '@/lib/server/dmapi-service'
+import { listFiles as serviceListFiles, updateFileMetadata, listBucketFolder as serviceListBucketFolder, findFileByStorageKey } from '@/lib/server/dmapi-service'
 
 function inferCategoryFromPath(path?: string | null, name?: string | null): string | null {
   const p = String(path || '').toLowerCase()
@@ -168,6 +168,36 @@ export async function POST(request: NextRequest) {
       return false
     }
 
+    function looksLikeDbId(value: any) {
+      const s = String(value || '')
+      return s.length >= 18 && s.length <= 30 && !s.includes('/') && !s.includes('.')
+    }
+
+    async function resolveDbId(f: any): Promise<string | null> {
+      const cid = String(f?.id || '')
+      if (looksLikeDbId(cid)) return cid
+      const sk = String((f as any)?.storage_key || '')
+      if (sk) {
+        try {
+          const found = await findFileByStorageKey(sk, { includeAppId: true }) as any
+          if (found?.id) return String(found.id)
+        } catch {}
+      }
+      // Attempt to synthesize storage key if missing
+      const bucketId = String((f as any)?.bucket_id || (f?.metadata?.bucketId) || '')
+      const user = String((f as any)?.user_id || userId || '')
+      const folderPath = String((f as any)?.folder_path || (f?.metadata?.folderPath) || '')
+      const name = String((f as any)?.name || (f as any)?.original_filename || '')
+      if (bucketId && user && folderPath && name) {
+        const candidate = `files/${user}/${bucketId}/${folderPath.replace(/^\/+|\/+$/g,'')}/${name}`
+        try {
+          const found = await findFileByStorageKey(candidate, { includeAppId: true }) as any
+          if (found?.id) return String(found.id)
+        } catch {}
+      }
+      return null
+    }
+
     async function processFile(f: any, fallbackCat?: string | null) {
       try {
         const meta = (f?.metadata || {}) as Record<string, any>
@@ -189,8 +219,30 @@ export async function POST(request: NextRequest) {
         total++
         if (!changed) { skipped++; return }
         if (!dryRun) {
-          // Always prefer service credentials for PATCH and apply a gentle throttle
-          await attemptPatch(String(f.id), patch)
+          // Resolve DB id if available; otherwise fall back to storage_key-based patch (DMAPI route)
+          let dbId = looksLikeDbId(f?.id) ? String(f.id) : await resolveDbId(f)
+          if (dbId) {
+            await attemptPatch(dbId, patch)
+          } else {
+            const sk = String((f as any)?.storage_key || '')
+            if (!sk) throw new Error('Missing DB id for file')
+            const DMAPI_BASE = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
+            const appSlug = process.env.DMAPI_APP_SLUG || process.env.DMAPI_APP_ID || 'castingly'
+            const token = await obtainServiceTokenForApp(appSlug)
+            const res = await fetch(`${DMAPI_BASE}/api/files/by-storage-key`, {
+              method: 'PATCH',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'X-Client-Id': appSlug,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ storage_key: sk, metadata: patch, categories: patch?.category ? [patch.category] : undefined }),
+            })
+            if (!res.ok) {
+              const b = await res.json().catch(() => null)
+              throw new Error(String(b?.error || b?.message || res.status))
+            }
+          }
           await sleep(120)
         }
         updated++

@@ -28,7 +28,7 @@ const DMAPI_SERVICE_PASSWORD =
 const DMAPI_LIST_USER_ID =
   process.env.DMAPI_LIST_USER_ID || process.env.DMAPI_SERVICE_SUBJECT_ID || undefined
 
-type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE'
+type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
 
 interface AuthPayload {
   access_token: string
@@ -311,6 +311,17 @@ export async function listFiles(params: ServiceListParams = {}) {
   return data
 }
 
+export async function findFileByStorageKey(storageKey: string, options: { includeAppId?: boolean } = {}) {
+  if (!storageKey || typeof storageKey !== 'string') throw new Error('storageKey is required')
+  const sp = new URLSearchParams()
+  if (!options.includeAppId) sp.set('app_id', DMAPI_APP_ID)
+  sp.set('storage_key', storageKey)
+  const data = await serviceFetch<ServiceListResponse>(`/api/files?${sp.toString()}`, { timeoutMs: 3000 })
+  const f = Array.isArray(data?.files) && data.files.length > 0 ? data.files[0] : null
+  if (f) normalizeFileUrls(f as any)
+  return f
+}
+
 export async function getFile(fileId: string) {
   if (!fileId) {
     throw new Error('File ID is required')
@@ -333,9 +344,9 @@ export async function deleteFile(fileId: string) {
 export async function updateFileMetadata(fileId: string, metadata: Record<string, unknown>) {
   if (!fileId) throw new Error('File ID is required')
   const body = JSON.stringify({ metadata })
-  // DMAPI supports PATCH /api/files/:id with { metadata }
+  // DMAPI supports PUT /api/files/:id with { metadata }
   await serviceFetch(`/api/files/${encodeURIComponent(fileId)}`, {
-    method: 'PATCH',
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body,
     timeoutMs: 6000,
