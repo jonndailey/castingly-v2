@@ -66,7 +66,7 @@ export async function GET(
       try { console.warn('[actors/:id] DB lookup failed, will try token/minimal fallback:', (e as any)?.message || e) } catch {}
     }
 
-    // Fallback: if no legacy record by id (e.g., Core UUID passed), try by email from token
+    // Fallback: if no actor row (or requester is self with non-actor role), try token + any-role profile
     if (!actor) {
       try {
         const authHeader = request.headers.get('authorization')
@@ -74,7 +74,9 @@ export async function GET(
         if (authInfo?.email) {
           const legacyUser = await legacyAuth.findByEmail(authInfo.email)
           if (legacyUser?.id) {
-            actor = await actors.getById(String(legacyUser.id))
+            // If self, allow any-role profile (so profile updates appear immediately for non-actor roles)
+            const isSelf = String(legacyUser.id) === String(id)
+            actor = isSelf ? await actors.getByIdAnyRole(String(legacyUser.id)) : await actors.getById(String(legacyUser.id))
           }
         }
       } catch {

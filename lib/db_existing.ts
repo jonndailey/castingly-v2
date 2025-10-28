@@ -129,6 +129,72 @@ export const actors = {
     }
   },
 
+  // Get single user profile without restricting role (owner/admin views)
+  async getByIdAnyRole(id: string) {
+    try {
+      const rows = (await query(
+        `SELECT u.id, u.email, u.name, u.role, u.avatar_url AS profile_image,
+                u.email_verified, u.forum_display_name, u.forum_signature,
+                u.is_verified_professional, u.is_investor, u.forum_last_seen_at,
+                u.created_at, u.updated_at,
+                u.phone,
+                p.bio, p.location, p.height, p.eye_color, p.hair_color,
+                p.skills, p.website, p.instagram, p.twitter, p.age_range, p.resume_url,
+                p.metadata AS profile_metadata
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE u.id = ?`,
+        [id]
+      )) as any[]
+      const row = rows[0]
+      if (!row) return undefined as any
+      try {
+        if (row && row.skills && typeof row.skills !== 'string') {
+          const s = Array.isArray(row.skills) ? row.skills : JSON.parse(String(row.skills))
+          if (Array.isArray(s)) row.skills = s.join(', ')
+        }
+      } catch {}
+      return row
+    } catch {
+      const rows = (await query(
+        `SELECT 
+           u.id,
+           u.email,
+           CONCAT_WS(' ', u.first_name, u.last_name) AS name,
+           u.role,
+           COALESCE(u.profile_image, a.profile_image) AS profile_image,
+           (u.status = 'active') AS email_verified,
+           u.forum_display_name,
+           u.forum_signature,
+           u.is_verified_professional,
+           u.is_investor,
+           u.forum_last_seen_at,
+           u.created_at,
+           u.updated_at,
+           a.bio,
+           NULL AS location,
+           a.height,
+           a.eye_color,
+           a.hair_color,
+           a.skills,
+           NULL AS profile_metadata
+         FROM users u
+         LEFT JOIN actors a ON a.user_id = u.id
+         WHERE u.id = ?`,
+        [id]
+      )) as any[]
+      const row = rows[0]
+      if (!row) return undefined as any
+      try {
+        if (row && row.skills && typeof row.skills !== 'string') {
+          const s = Array.isArray(row.skills) ? row.skills : JSON.parse(String(row.skills))
+          if (Array.isArray(s)) row.skills = s.join(', ')
+        }
+      } catch {}
+      return row
+    }
+  },
+
   // Get actor's media (prefer modern media table; fallback to actor_media)
   async getMedia(actorId: string) {
     try {
