@@ -234,7 +234,7 @@ export default function ActorProfile() {
     }
     return tiles
   }
-  const galleryTilesFromMedia: VariantTile[] = buildVariantTiles((media?.gallery ?? media?.other ?? []))
+  const galleryTilesFromMedia: VariantTile[] = buildVariantTiles((media?.gallery ?? []))
   const galleryTiles: VariantTile[] = fastGalleryTiles.length ? fastGalleryTiles as any : galleryTilesFromMedia
   const headshotTilesFromMedia: VariantTile[] = buildVariantTiles((media?.headshots ?? []))
   const headshotTiles: VariantTile[] = fastHeadshotTiles.length
@@ -1031,6 +1031,8 @@ export default function ActorProfile() {
                           }}
                           onError={(e) => {
                             e.currentTarget.style.display = 'none'
+                            const sp = e.currentTarget.parentElement?.querySelector('[data-spinner]') as HTMLElement | null;
+                            if (sp) sp.style.display = 'none'
                             e.currentTarget.parentElement?.classList.add('bg-gray-300')
                           }}
                         />
@@ -1104,6 +1106,8 @@ export default function ActorProfile() {
                           }}
                           onError={(e) => {
                             e.currentTarget.style.display = 'none'
+                            const sp = e.currentTarget.parentElement?.querySelector('[data-spinner]') as HTMLElement | null;
+                            if (sp) sp.style.display = 'none'
                             e.currentTarget.parentElement?.classList.add('bg-gray-300')
                           }}
                         />
