@@ -121,10 +121,10 @@ export default function PublicTalentProfilePage() {
           : []
 
         const galleryEntries = Array.isArray(actorData.media?.gallery)
-          ? actorData.media.gallery.filter((entry: any) =>
-              Boolean(entry?.url || entry?.signed_url)
-            )
-          : []
+          ? actorData.media.gallery.filter((entry: any) => Boolean(entry?.url || entry?.signed_url))
+          : Array.isArray(actorData.media?.other)
+            ? actorData.media.other.filter((entry: any) => Boolean(entry?.url || entry?.signed_url))
+            : []
 
         const reelEntries = Array.isArray(actorData.media?.reels)
           ? actorData.media.reels.filter((entry: any) => Boolean(entry))
