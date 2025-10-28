@@ -41,20 +41,30 @@ export async function GET(request: NextRequest) {
         bucketId: bucket,
         userId: String(userId),
         path: String(path || ''),
+        // Do not filter by app_id here; bucket contents may span apps
+        includeAppId: true,
       })
       const files = Array.isArray(folder?.files) ? folder.files : []
-      // Find by exact name
-      const exact = files.find((it: any) => String(it?.name || it?.original_filename || it?.id || '') === String(name))
-      // Try variant-insensitive match (ignore _large/_medium/_small and extension)
-      const variantBase = String(name).toLowerCase().replace(/_(large|medium|small)(?=\.[^.]+$)/, '')
+      const requested = String(name)
+      // Exact name or original_filename match
+      const exact = files.find((it: any) => {
+        const n = String(it?.name || it?.original_filename || it?.id || '')
+        return n === requested
+      })
+      // Try variant-insensitive match (ignore _large|_medium|_small|_thumbnail and extension)
+      const variantBase = requested.toLowerCase().replace(/_(large|medium|small|thumbnail)(?=\.[^.]+$)/, '')
       const baseNoExt = variantBase.replace(/\.[^.]+$/, '')
       const byVariant = exact || files.find((it: any) => {
-        const n = String(it?.name || '').toLowerCase()
-        const nNoExt = n.replace(/\.[^.]+$/, '')
-        const nNoSuffix = nNoExt.replace(/_(large|medium|small)$/, '')
-        return nNoSuffix === baseNoExt
+        const variants = [String(it?.name || ''), String(it?.original_filename || '')]
+        for (const raw of variants) {
+          const n = raw.toLowerCase()
+          const nNoExt = n.replace(/\.[^.]+$/, '')
+          const nNoSuffix = nNoExt.replace(/_(large|medium|small|thumbnail)$/, '')
+          if (nNoSuffix === baseNoExt) return true
+        }
+        return false
       })
-      const prefer = byVariant || files.find((f: any) => /\.(jpe?g|png|webp)$/i.test(String(f.name||''))) || files[0]
+      const prefer = byVariant || files.find((f: any) => /\.(jpe?g|png|webp)$/i.test(String(f.name||String(f.original_filename||'')))) || files[0]
       const targetUrl = (prefer as any)?.signed_url || (prefer as any)?.public_url
       if (targetUrl && typeof targetUrl === 'string') {
         return new Response(null, { status: 302, headers: { Location: targetUrl, ...cacheHeaders } })

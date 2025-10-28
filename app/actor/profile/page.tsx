@@ -954,7 +954,7 @@ export default function ActorProfile() {
               <Card>
               <CardHeader>
                 <CardTitle>
-                  Gallery <span className="text-xs text-gray-500">({galleryImages.length}/20)</span>
+                  Gallery <span className="text-xs text-gray-500">({galleryTiles.length}/20)</span>
                 </CardTitle>
                 <CardDescription>Additional photos and portfolio images</CardDescription>
               </CardHeader>
