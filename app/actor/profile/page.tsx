@@ -145,6 +145,13 @@ export default function ActorProfile() {
 
   // Group variants and pick small for grid, full for lightbox
   type VariantTile = { id?: string; thumbSrc: string; fullSrc: string; alt: string }
+  function isPublicEntry(entry: any): boolean {
+    try {
+      const v = String((entry?.visibility || entry?.metadata?.access || '').toString()).toLowerCase()
+      const b = String((entry?.metadata?.bucketId || entry?.metadata?.bucket_id || '')).toLowerCase()
+      return v === 'public' || b === 'castingly-public'
+    } catch { return false }
+  }
   function splitVariant(name?: string | null) {
     const n = String(name || '').toLowerCase()
     const m = n.match(/^(.*?)(?:_(large|medium|small|thumbnail))?(\.[^.]+)?$/)
@@ -175,8 +182,8 @@ export default function ActorProfile() {
     }
     const tiles: VariantTile[] = []
     for (const [base, g] of groups.entries()) {
-      // Thumb preference: small > thumbnail > medium > original > large
-      const thumbEntry = g.small || g.thumbnail || g.medium || g.original || g.large
+      // Thumb preference: public small > small > thumbnail > medium > original > large
+      const thumbEntry = (g.small && isPublicEntry(g.small) ? g.small : null) || g.small || g.thumbnail || g.medium || g.original || g.large
       // Full preference: original > large > medium > small > thumbnail
       const fullEntry = g.original || g.large || g.medium || g.small || g.thumbnail
       if (!thumbEntry || !fullEntry) continue
@@ -527,10 +534,10 @@ export default function ActorProfile() {
                 <div className="flex flex-col items-center">
                   <Avatar
                     src={
-                      // Owner: prefer server avatar_url, then small tile, then safe fallback
+                      // Owner: prefer small public tile (edge cached), then server avatar_url, then safe fallback
                       (user?.id && actorData?.id && String(user.id) === String(actorData.id))
-                        ? (actorData?.avatar_url || headshotTiles?.[0]?.thumbSrc || `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`)
-                        : (actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`)
+                        ? (headshotTiles?.[0]?.thumbSrc || actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`)
+                        : (headshotTiles?.[0]?.thumbSrc || actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`)
                     }
                     alt={actorData?.name || ''}
                     fallback={actorData?.name || ''}
@@ -1442,11 +1449,24 @@ function cn(...classes: (string | boolean | undefined)[]) {
   return classes.filter(Boolean).join(' ')
 }
 
-function getMediaUrl(entry: ActorMediaEntry | { url?: string | null; signed_url?: string | null; thumbnail_url?: string | null; uploaded_at?: string | null }) {
-  // Prefer signed URLs for owner views (private by default)
-  const chosen = (entry as any).signed_url || (entry as any).url || (entry as any).thumbnail_url || null
+function getMediaUrl(entry: ActorMediaEntry | { url?: string | null; signed_url?: string | null; thumbnail_url?: string | null; uploaded_at?: string | null; visibility?: string | null; metadata?: any }) {
+  if (!entry) return null
+  const url: string | null = (entry as any).url || (entry as any).thumbnail_url || null
+  const signed: string | null = (entry as any).signed_url || null
+  const isServe = typeof url === 'string' && (/^\/?api\/serve\//.test(url) || /media\.dailey\.cloud\/api\/serve\//.test(url))
+  const isProxy = typeof url === 'string' && url.startsWith('/api/media/proxy?')
+  const publicEntry = isPublicEntry(entry as any)
+  // Prefer edge-cached serve URL for public entries when available
+  let chosen: string | null = null
+  if ((isServe || isProxy) && url && publicEntry) {
+    chosen = url
+  } else if (url && !signed) {
+    chosen = url
+  } else {
+    chosen = signed || url || (entry as any).thumbnail_url || null
+  }
   if (!chosen) return null
-  // Avoid appending cache-busters to signed URLs
+  // Avoid cache-buster on signed URLs
   const isSigned = /[?&]X-Amz-(Signature|Credential)=/i.test(chosen)
   if (isSigned) return chosen
   const uploadedAt: string | undefined = (entry as any)?.uploaded_at || undefined
