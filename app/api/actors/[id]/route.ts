@@ -725,18 +725,47 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
       } catch {}
     }
 
+    // Never use raw S3/OVH URLs
+    const isRawStorageUrl = (u?: string | null) => {
+      if (!u || typeof u !== 'string') return false
+      try {
+        const host = new URL(u).host
+        return /(^|\.)s3\.|amazonaws\.com|\.ovh\./i.test(host)
+      } catch { return false }
+    }
+    
+    // Select URL with strict preference, avoiding raw storage
+    let selectedUrl = preferredUrl
+    if (!selectedUrl && directLooksLikeOriginalButNotStorage) {
+      selectedUrl = proxyUrl || null
+    } else if (!selectedUrl) {
+      if (directUrlCandidate && !isRawStorageUrl(directUrlCandidate)) {
+        selectedUrl = directUrlCandidate
+      } else if (proxyUrl) {
+        selectedUrl = proxyUrl
+      }
+    }
+    
     const simplified: SimplifiedMedia = {
       id: file.id,
-      // Prefer serve URL for public files; else direct; else proxy on mismatch
-      url: preferredUrl || (directLooksLikeOriginalButNotStorage ? (proxyUrl || null) : (directUrlCandidate || proxyUrl || null)),
-      signed_url: directLooksLikeOriginalButNotStorage ? null : ((file as any)?.signed_url || null),
-      thumbnail_url:
-        (file as any)?.thumbnail_signed_url ||
-        (file as any)?.thumbnail_url ||
-        preferredUrl ||
-        (directLooksLikeOriginalButNotStorage ? null : (file as any)?.public_url) ||
-        proxyUrl ||
-        null,
+      // Never use raw storage URLs
+      url: selectedUrl,
+      signed_url: directLooksLikeOriginalButNotStorage ? null : 
+        (!isRawStorageUrl((file as any)?.signed_url) ? (file as any)?.signed_url : null),
+      thumbnail_url: (() => {
+        // Try each option but skip raw storage URLs
+        const candidates = [
+          (file as any)?.thumbnail_signed_url,
+          (file as any)?.thumbnail_url,
+          preferredUrl,
+          (directLooksLikeOriginalButNotStorage ? null : (file as any)?.public_url),
+          proxyUrl
+        ]
+        for (const url of candidates) {
+          if (url && !isRawStorageUrl(url)) return url
+        }
+        return null
+      })(),
       name: file.original_filename,
       size: file.file_size,
       mime_type: file.mime_type,

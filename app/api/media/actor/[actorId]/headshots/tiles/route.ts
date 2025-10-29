@@ -95,10 +95,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ actorId: s
         if (isJunk) continue
         let serveThumb: string | null = null
         let serveFull: string | null = null
-        if (b && bucketId === 'castingly-public' && origName) {
+        if (b && origName) {
+          // Always try to construct /api/serve URL for public assets
+          const effectiveBucket = bucketId || 'castingly-public'
           const tail = folderPathRaw ? `${String(folderPathRaw).replace(/^\/+|\/+$/g, '')}/` : ''
           // Prefer /api/serve (edge cached) for public assets
-          const serveUrl = `${b}/api/serve/files/${encodeURIComponent(String(actorId))}/castingly-public/${tail}${encodeURIComponent(origName)}`
+          const serveUrl = `${b}/api/serve/files/${encodeURIComponent(String(actorId))}/${effectiveBucket}/${tail}${encodeURIComponent(origName)}`
           serveThumb = serveUrl
           serveFull = serveUrl
         }
@@ -119,9 +121,15 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ actorId: s
         const isRawHost = (u?: string | null) => {
           try { if (!u) return false; const h = new URL(u).host; return /(^|\.)s3\.|amazonaws\.com|\.ovh\./i.test(h) } catch { return false }
         }
+        // Always prefer serve URLs, synthesize if possible, never use raw storage
+        if (!serveThumb && rawThumb) serveThumb = synthServe(rawThumb)
+        if (!serveFull && rawFull) serveFull = synthServe(rawFull)
         const thumb = serveThumb || (rawThumb && !isRawHost(rawThumb) ? rawThumb : null)
         const full = serveFull || (rawFull && !isRawHost(rawFull) ? rawFull : null)
-        if (thumb && full) mapped.push({ thumb, full, name: origName || 'Headshot' })
+        // Only add tiles with both thumb and full URLs, and neither can be raw storage
+        if (thumb && full && !isRawHost(thumb) && !isRawHost(full)) {
+          mapped.push({ thumb, full, name: origName || 'Headshot' })
+        }
       }
       tiles = mapped
     } catch {}

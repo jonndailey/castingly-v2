@@ -329,13 +329,15 @@ export default function ActorProfile() {
       setUploadMessage('Uploaded successfully')
       setTimeout(() => setUploadMessage(''), 2500)
       // Refresh client media and tiles immediately to reflect new headshot
-      try { reloadMedia() } catch {}
-      router.refresh()
+      // Wait for tiles first to get clean /api/serve URLs
       try {
         if ((pendingCategory === 'headshot') && user?.id) {
           await fetchHeadshotTiles(String(user.id))
         }
       } catch {}
+      // Then reload full media after tiles are set
+      try { reloadMedia() } catch {}
+      router.refresh()
       // Persist a stable avatar pointer so profile reloads resolve via safe endpoint immediately
       try {
         if ((pendingCategory === 'headshot') && user?.id && token) {
@@ -1532,13 +1534,15 @@ function getMediaUrl(entry: ActorMediaEntry | { url?: string | null; signed_url?
   // 1) For public files, any /api/serve URL (edge cached)
   // 2) Signed URL (private)
   // 3) Non-signed URL that is not a raw storage host
-  // 4) Thumbnail as a last resort
+  // 4) Thumbnail as a last resort (but NEVER raw storage)
   let chosen: string | null = null
   if (publicEntry && (looksServe(url) || looksProxy(url))) chosen = url
   else if (publicEntry && looksServe(thumb)) chosen = thumb
-  else if (signed) chosen = signed
+  else if (signed && !looksRawStorage(signed)) chosen = signed
   else if (url && !looksRawStorage(url)) chosen = url
   else if (thumb && !looksRawStorage(thumb)) chosen = thumb
+  // Never return raw S3/OVH URLs - return null instead
+  if (chosen && looksRawStorage(chosen)) return null
   if (!chosen) return null
   // Avoid cache-buster on signed URLs
   const isSigned = /[?&]X-Amz-(Signature|Credential)=/i.test(chosen)
