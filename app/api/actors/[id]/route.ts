@@ -57,6 +57,12 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const includeMediaParam = searchParams.get('media') || searchParams.get('includeMedia')
     const includeMedia = includeMediaParam === '1' || includeMediaParam === 'true'
+    // Opt-in flag to perform slower DMAPI avatar discovery; default is fast path
+    const resolveAvatarParam =
+      searchParams.get('resolveAvatar') ||
+      searchParams.get('resolve_avatar') ||
+      searchParams.get('avatar')
+    const shouldResolveAvatar = resolveAvatarParam === '1' || /^(true|yes|on)$/i.test(String(resolveAvatarParam || ''))
     const { id } = await context.params
     let actor: any = null
     // Try DB first but do not fail hard if DB is unavailable
@@ -179,19 +185,25 @@ export async function GET(
       )
     }
 
+    // Fast path: skip legacy media lookup unless the caller requested full media
     let legacyMedia: LegacyMediaRecord[] = []
-    try {
-      legacyMedia = (await actors.getMedia(String((actor as any).id))) as LegacyMediaRecord[]
-    } catch (e) {
-      try { console.warn('[actors/:id] DB media lookup failed, continuing with DMAPI/empty legacy media:', (e as any)?.message || e) } catch {}
-      legacyMedia = []
+    if (includeMedia) {
+      try {
+        legacyMedia = (await actors.getMedia(String((actor as any).id))) as LegacyMediaRecord[]
+      } catch (e) {
+        try { console.warn('[actors/:id] DB media lookup failed, continuing with DMAPI/empty legacy media:', (e as any)?.message || e) } catch {}
+        legacyMedia = []
+      }
     }
 
     const skillsArray = parseSkills(actor.skills)
 
     const authHeader = request.headers.get('authorization')
-    const authResult = await validateUserToken(authHeader)
-    const includePrivate = authResult?.userId === actor.id
+    let includePrivate = false
+    if (includeMedia) {
+      const authResult = await validateUserToken(authHeader)
+      includePrivate = authResult?.userId === actor.id
+    }
 
     // Serve from cache quickly if available and safe
     const cacheKey = `${actor.id}|m=${includeMedia?'1':'0'}|p=${includePrivate?'1':'0'}`
@@ -405,7 +417,7 @@ export async function GET(
       }
     }
 
-    let media: CategorisedMedia
+    let media: CategorisedMedia | null
     if (includeMedia && dmapiFiles.length > 0) {
       const categorised = categoriseDmapiFiles(dmapiFiles, String(actor.id))
       media = includePrivate ? categorised : filterToPublicMedia(categorised)
@@ -417,13 +429,15 @@ export async function GET(
         media.other = byDate(media.other || [])
         media.all = byDate(media.all || [])
       } catch {}
-    } else {
+    } else if (includeMedia) {
       media = categoriseLegacyMedia(legacyMedia)
+    } else {
+      media = null
     }
 
-    let avatarFromDmapi = media.headshots?.[0]?.url || media.headshots?.[0]?.thumbnail_url || media.headshots?.[0]?.signed_url
-    // Prefer newest public small variant from castingly-public via folder listing
-    if (!avatarFromDmapi) {
+    let avatarFromDmapi = (media as any)?.headshots?.[0]?.url || (media as any)?.headshots?.[0]?.thumbnail_url || (media as any)?.headshots?.[0]?.signed_url || null
+    // Prefer newest public small variant from castingly-public via folder listing (opt-in)
+    if (!avatarFromDmapi && shouldResolveAvatar) {
       try {
         const folder = await listBucketFolder({
           bucketId: 'castingly-public',
@@ -447,7 +461,7 @@ export async function GET(
         }
       } catch {}
     }
-    if (!avatarFromDmapi) {
+    if (!avatarFromDmapi && shouldResolveAvatar) {
       try {
         // Lightweight headshot lookup even when includeMedia=false
         const quick = await listActorDmapiFiles(String(actor.id), { limit: 1, category: 'headshot', order: 'desc', sort: 'uploaded_at' })
@@ -494,23 +508,25 @@ export async function GET(
 
     // If the stored avatar is our proxy without a presigned URL, try to attach one using the caller's token
     try {
-      const vr = await validateUserToken(authHeader)
       const needsSign = typeof legacyAvatar === 'string' && legacyAvatar.includes('/api/media/proxy?') && !legacyAvatar.includes('signed=')
-      if (vr?.token && needsSign) {
-        const u = new URL(legacyAvatar!, 'https://castingly.dailey.dev')
-        const name = u.searchParams.get('name') || ''
-        const folder = u.searchParams.get('path') || ''
-        const listed = await listUserFiles(vr.token, { limit: 500 })
-        const files = Array.isArray(listed?.files) ? listed.files : []
-        const match = files.find((f: any) => {
-          const fname = String(f.original_filename || f.name || f.id || '')
-          const fpath = String(f.folder_path || (f.metadata && (f.metadata as any).folderPath) || '')
-          return fname === name && (!folder || fpath.includes(folder))
-        })
-        const signed = (match as any)?.signed_url as string | undefined
-        if (signed) {
-          u.searchParams.set('signed', signed)
-          legacyAvatar = u.pathname + '?' + u.searchParams.toString()
+      if (shouldResolveAvatar && needsSign) {
+        const vr = await validateUserToken(authHeader)
+        if (vr?.token) {
+          const u = new URL(legacyAvatar!, 'https://castingly.dailey.dev')
+          const name = u.searchParams.get('name') || ''
+          const folder = u.searchParams.get('path') || ''
+          const listed = await listUserFiles(vr.token, { limit: 500 })
+          const files = Array.isArray(listed?.files) ? listed.files : []
+          const match = files.find((f: any) => {
+            const fname = String(f.original_filename || f.name || f.id || '')
+            const fpath = String(f.folder_path || (f.metadata && (f.metadata as any).folderPath) || '')
+            return fname === name && (!folder || fpath.includes(folder))
+          })
+          const signed = (match as any)?.signed_url as string | undefined
+          if (signed) {
+            u.searchParams.set('signed', signed)
+            legacyAvatar = u.pathname + '?' + u.searchParams.toString()
+          }
         }
       }
     } catch {}
@@ -522,8 +538,8 @@ export async function GET(
     const hasEye = typeof actor.eye_color === 'string' && actor.eye_color.trim().length > 0
     const hasHair = typeof actor.hair_color === 'string' && actor.hair_color.trim().length > 0
     const hasSkills = Array.isArray(skillsArray) && skillsArray.length > 0
-    const hasHeadshot = Array.isArray(media.headshots) && media.headshots.length > 0
-    const galleryImages = (media.other || []).filter((m) => typeof m.mime_type === 'string' && m.mime_type.startsWith('image/'))
+    const hasHeadshot = Array.isArray((media as any)?.headshots) && ((media as any).headshots.length > 0)
+    const galleryImages = (((media as any)?.other) || []).filter((m: any) => typeof m.mime_type === 'string' && m.mime_type.startsWith('image/'))
     const hasGallery = galleryImages.length > 0
     const checklist = [hasBio, hasLocation, hasHeight, hasEye, hasHair, hasSkills, hasHeadshot, hasGallery]
     const met = checklist.reduce((acc, v) => acc + (v ? 1 : 0), 0)
@@ -562,7 +578,7 @@ export async function GET(
       profile_image: resolveWebAvatarUrl(legacyAvatar, actor.name),
       resume_url: actor.resume_url,
       location: actor.location || 'Los Angeles',
-      media,
+      media: includeMedia ? (media as any) : null,
       profile_completion: profileCompletion,
       preferences,
       created_at: actor.created_at,

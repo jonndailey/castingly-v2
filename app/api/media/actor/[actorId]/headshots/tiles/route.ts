@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { listBucketFolder } from '@/lib/server/dmapi-service'
+import { listBucketFolder, listActorFiles } from '@/lib/server/dmapi-service'
 
 type Tile = { thumb: string; full: string; name: string }
 
@@ -9,14 +9,40 @@ function baseUrl(): string | null {
   return b.replace(/\/$/, '')
 }
 
+// In-memory small cache of URL HEAD validation to avoid repeated probes
+const headCache = new Map<string, { ok: boolean; exp: number }>()
+const HEAD_TTL_MS = 6 * 60 * 60 * 1000 // 6 hours
+
+async function headOk(url: string): Promise<boolean> {
+  const now = Date.now()
+  const cached = headCache.get(url)
+  if (cached && cached.exp > now) return cached.ok
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 800)
+  try {
+    const r = await fetch(url, { method: 'HEAD', signal: controller.signal as any, cache: 'no-store' })
+    const ct = (r.headers.get('content-type') || '').toLowerCase()
+    const ok = r.ok && ct.startsWith('image/')
+    headCache.set(url, { ok, exp: now + HEAD_TTL_MS })
+    return ok
+  } catch {
+    headCache.set(url, { ok: false, exp: now + 5 * 60 * 1000 }) // short cache for failures
+    return false
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 function pickTiles(files: Array<{ name?: string; path?: string }>, actorId: string): Tile[] {
   const b = baseUrl()
   if (!b) return []
   const groups = new Map<string, { small?: string; medium?: string; large?: string; thumbnail?: string; original?: string; baseName: string; path: string }>()
   const serve = (userId: string, folderPath: string, name: string) => `${b}/api/serve/files/${encodeURIComponent(String(userId))}/castingly-public/${folderPath ? `${folderPath.replace(/^\/+|\/+$/g, '')}/` : ''}${encodeURIComponent(name)}`
+  const junk = /^(android-launchericon|maskable-icon|icon-\d+x\d+|app-logo|test[-_]?)/i
   for (const f of files) {
     const name = String(f?.name || '')
     if (!name) continue
+    if (junk.test(name)) continue
     const rawPath = String(f?.path || '')
     // Normalize DMAPI folder path to expected tail (e.g., actors/<id>/headshots)
     const p1 = rawPath.replace(/^files\/[a-f0-9-]+\/castingly-public\//i, '')
@@ -53,9 +79,69 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ actorId: s
     const t0 = Date.now()
     const { actorId } = await ctx.params
     if (!actorId) return NextResponse.json({ error: 'actorId required' }, { status: 400 })
-    const folder = await listBucketFolder({ bucketId: 'castingly-public', userId: String(actorId), path: `actors/${actorId}/headshots` })
-    const files = Array.isArray((folder as any)?.files) ? (folder as any).files : []
-    const tiles = pickTiles(files, String(actorId))
+    // First try metadata-driven listing (more reliable than folder-only)
+    let tiles: Tile[] = []
+    try {
+      const listed: any = await listActorFiles(String(actorId), { limit: 400, metadata: { category: 'headshot' } })
+      const files = Array.isArray(listed?.files) ? listed.files : []
+      const mapped: Tile[] = []
+      const b = baseUrl() || 'https://media.dailey.cloud'
+      for (const f of files) {
+        const meta = (f as any)?.metadata || {}
+        const bucketId = String(meta.bucketId || meta.bucket_id || '').toLowerCase()
+        const folderPathRaw = String(meta.folderPath || meta.folder_path || '')
+        const origName = String((f.original_filename || (f as any).name || '').toString())
+        const isJunk = /^(android-launchericon|maskable-icon|icon-\d+x\d+|app-logo|test[-_]?)/i.test(origName)
+        if (isJunk) continue
+        let serveThumb: string | null = null
+        let serveFull: string | null = null
+        if (b && bucketId === 'castingly-public' && origName) {
+          const tail = folderPathRaw ? `${String(folderPathRaw).replace(/^\/+|\/+$/g, '')}/` : ''
+          // Prefer /api/serve (edge cached) for public assets
+          const serveUrl = `${b}/api/serve/files/${encodeURIComponent(String(actorId))}/castingly-public/${tail}${encodeURIComponent(origName)}`
+          serveThumb = serveUrl
+          serveFull = serveUrl
+        }
+        let rawThumb = (f.thumbnail_url as string) || (f.public_url as string) || (f.url as string) || null
+        let rawFull = (f.url as string) || (f.public_url as string) || (f.thumbnail_url as string) || null
+        // If URLs point at raw storage, attempt to synthesize a /api/serve URL from their path
+        const synthServe = (u?: string | null) => {
+          try {
+            if (!u) return null
+            const m = u.match(/\/files\/[^/]+\/(castingly-[^/]+\/.+)$/)
+            if (!m || !b) return null
+            const tail = m[1]
+            return `${b}/api/serve/files/${encodeURIComponent(String(actorId))}/${tail}`
+          } catch { return null }
+        }
+        if (!serveThumb) serveThumb = synthServe(rawThumb)
+        if (!serveFull) serveFull = synthServe(rawFull)
+        const isRawHost = (u?: string | null) => {
+          try { if (!u) return false; const h = new URL(u).host; return /(^|\.)s3\.|amazonaws\.com|\.ovh\./i.test(h) } catch { return false }
+        }
+        const thumb = serveThumb || (rawThumb && !isRawHost(rawThumb) ? rawThumb : null)
+        const full = serveFull || (rawFull && !isRawHost(rawFull) ? rawFull : null)
+        if (thumb && full) mapped.push({ thumb, full, name: origName || 'Headshot' })
+      }
+      tiles = mapped
+    } catch {}
+    // Fallback to public folder listing if metadata path is empty
+    if (!tiles.length) {
+      const folder = await listBucketFolder({ bucketId: 'castingly-public', userId: String(actorId), path: `actors/${actorId}/headshots` })
+      const files = Array.isArray((folder as any)?.files) ? (folder as any).files : []
+      const picked = pickTiles(files, String(actorId))
+      // Validate fallback tiles quickly with a HEAD request (short timeout) and cache successes
+      const validated: Tile[] = []
+      await Promise.all(
+        picked.map(async (t) => {
+          try {
+            const ok = await headOk(t.thumb)
+            if (ok) validated.push(t)
+          } catch {}
+        })
+      )
+      tiles = validated
+    }
     const dur = Date.now() - t0
     const res = NextResponse.json({ tiles })
     res.headers.set('Cache-Control', 'private, max-age=20')

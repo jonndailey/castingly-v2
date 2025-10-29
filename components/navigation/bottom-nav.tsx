@@ -422,7 +422,7 @@ function NavAvatar({ userId, name, url }: { userId: string; name: string; url: s
     let cancelled = false
     ;(async () => {
       try {
-        const r = await fetch(`/api/media/actor/${encodeURIComponent(userId)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' })
+        const r = await fetch(`/api/media/actor/${encodeURIComponent(userId)}/headshots/tiles`, { cache: 'no-store' })
         if (!r.ok) throw new Error('tiles fail')
         const j = await r.json().catch(() => null)
         const tiles = Array.isArray(j?.tiles) ? j.tiles : []

@@ -58,8 +58,31 @@ const PROFILE_CACHE_TTL = 5_000 // 5s for more immediate UI feedback
 
 export function useActorProfile(actorId?: string, options?: { includeMedia?: boolean }) {
   const { user, token } = useAuthStore()
-  const [profile, setProfile] = useState<ActorProfile | null>(null)
-  const [loading, setLoading] = useState(true)
+  const seedOwner = !options?.includeMedia && user && (!actorId || String(actorId) === String(user.id))
+  const seedProfile: ActorProfile | null = seedOwner
+    ? {
+        id: String(user!.id),
+        email: user!.email,
+        name: user!.name,
+        avatar_url: (user as any).avatar_url || null,
+        bio: null,
+        skills: [],
+        phone: null,
+        website: null,
+        instagram: null,
+        twitter: null,
+        age_range: null,
+        height: null,
+        eye_color: null,
+        hair_color: null,
+        resume_url: null,
+        location: 'Los Angeles',
+        profile_completion: 0,
+        preferences: {},
+      }
+    : null
+  const [profile, setProfile] = useState<ActorProfile | null>(seedProfile)
+  const [loading, setLoading] = useState(!seedProfile)
   const [error, setError] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
 
@@ -79,11 +102,41 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
         const cacheKey = `${id}|m=${options?.includeMedia ? '1' : '0'}`
         const cached = profileCache.get(cacheKey)
         const now = Date.now()
+        let seeded = false
         if (cached && now - cached.ts < PROFILE_CACHE_TTL) {
           setProfile(cached.data)
           setLoading(false)
+          seeded = true
         } else {
-          setLoading(true)
+          // Optimistic seed from auth store for owner views
+          if (!options?.includeMedia && user && String(user.id) === String(id)) {
+            const seed: any = {
+              id: String(user.id),
+              email: user.email,
+              name: user.name,
+              role: user.role,
+              avatar_url: user.avatar_url || null,
+              bio: null,
+              skills: [],
+              phone: null,
+              website: null,
+              instagram: null,
+              twitter: null,
+              age_range: null,
+              height: null,
+              eye_color: null,
+              hair_color: null,
+              resume_url: null,
+              location: 'Los Angeles',
+              profile_completion: 0,
+              preferences: {},
+            }
+            setProfile(seed)
+            setLoading(false)
+            seeded = true
+          } else {
+            setLoading(true)
+          }
         }
 
         const qs = new URLSearchParams()

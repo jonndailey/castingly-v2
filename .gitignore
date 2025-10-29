@@ -119,3 +119,6 @@ test-*.mjs
 *.sql
 *.dump
 database/migrations/real_data//artifacts
+ 
+# Local artifacts from scripts and MCP browser
+/artifacts/

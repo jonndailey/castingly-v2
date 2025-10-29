@@ -136,7 +136,7 @@ export default function ActorProfile() {
   // Fast path: prefetch public small headshot tiles via lightweight API
   const fetchHeadshotTiles = useCallback(async (id: string) => {
     try {
-      const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' })
+      const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles`, { cache: 'no-store' })
       if (!r.ok) return
       const j = await r.json()
       const tiles = Array.isArray(j?.tiles) ? j.tiles : []
@@ -159,7 +159,7 @@ export default function ActorProfile() {
     let aborted = false
     ;(async () => {
       try {
-        const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/gallery/tiles?ts=${Date.now()}`, { cache: 'no-store' })
+        const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/gallery/tiles`, { cache: 'no-store' })
         if (!r.ok) return
         const j = await r.json()
         if (aborted) return
@@ -238,11 +238,13 @@ export default function ActorProfile() {
     return tiles
   }
   const galleryTilesFromMedia: VariantTile[] = buildVariantTiles((media?.gallery ?? []))
-  const galleryTiles: VariantTile[] = fastGalleryTiles.length ? fastGalleryTiles as any : galleryTilesFromMedia
+  const galleryTilesAll: VariantTile[] = fastGalleryTiles.length ? fastGalleryTiles as any : galleryTilesFromMedia
+  const galleryTiles: VariantTile[] = galleryTilesAll.slice(0, 20)
   const headshotTilesFromMedia: VariantTile[] = buildVariantTiles((media?.headshots ?? []))
-  const headshotTiles: VariantTile[] = fastHeadshotTiles.length
+  const headshotTilesAll: VariantTile[] = fastHeadshotTiles.length
     ? fastHeadshotTiles as any
     : headshotTilesFromMedia
+  const headshotTiles: VariantTile[] = headshotTilesAll.slice(0, 20)
   
   const openImageModal = useCallback((src: string, alt: string, gallery: Array<{ src: string; alt: string }>, index: number) => {
     setImageGallery(gallery)
@@ -1053,10 +1055,8 @@ export default function ActorProfile() {
                             if (sp) sp.style.display = 'none';
                           }}
                           onError={(e) => {
-                            e.currentTarget.style.display = 'none'
-                            const sp = e.currentTarget.parentElement?.querySelector('[data-spinner]') as HTMLElement | null;
-                            if (sp) sp.style.display = 'none'
-                            e.currentTarget.parentElement?.classList.add('bg-gray-300')
+                            const parent = e.currentTarget.parentElement as HTMLElement | null
+                            if (parent) parent.style.display = 'none'
                           }}
                         />
                       </div>
@@ -1128,10 +1128,8 @@ export default function ActorProfile() {
                             if (sp) sp.style.display = 'none';
                           }}
                           onError={(e) => {
-                            e.currentTarget.style.display = 'none'
-                            const sp = e.currentTarget.parentElement?.querySelector('[data-spinner]') as HTMLElement | null;
-                            if (sp) sp.style.display = 'none'
-                            e.currentTarget.parentElement?.classList.add('bg-gray-300')
+                            const parent = e.currentTarget.parentElement as HTMLElement | null
+                            if (parent) parent.style.display = 'none'
                           }}
                         />
                       </div>
@@ -1519,22 +1517,28 @@ function cn(...classes: (string | boolean | undefined)[]) {
 
 function getMediaUrl(entry: ActorMediaEntry | { url?: string | null; signed_url?: string | null; thumbnail_url?: string | null; uploaded_at?: string | null; visibility?: string | null; metadata?: any }) {
   if (!entry) return null
-  const url: string | null = (entry as any).url || (entry as any).thumbnail_url || null
+  const url: string | null = (entry as any).url || null
+  const thumb: string | null = (entry as any).thumbnail_url || null
   const signed: string | null = (entry as any).signed_url || null
-  const isServe = typeof url === 'string' && (/^\/?api\/serve\//.test(url) || /media\.dailey\.cloud\/api\/serve\//.test(url))
-  const isProxy = typeof url === 'string' && url.startsWith('/api/media/proxy?')
   const visibility = String(((entry as any)?.visibility || (entry as any)?.metadata?.access || '')).toLowerCase()
   const bucket = String(((entry as any)?.metadata?.bucketId || (entry as any)?.metadata?.bucket_id || '')).toLowerCase()
   const publicEntry = visibility === 'public' || bucket === 'castingly-public'
-  // Prefer edge-cached serve URL for public entries when available
+
+  const looksServe = (u?: string | null) => typeof u === 'string' && (/^\/?api\/serve\//.test(u) || /media\.dailey\.cloud\/api\/serve\//.test(u))
+  const looksProxy = (u?: string | null) => typeof u === 'string' && /^\/?api\/media\/proxy\?/.test(u)
+  const looksRawStorage = (u?: string | null) => typeof u === 'string' && /(s3\.|amazonaws\.com|\.ovh\.)/i.test(u!)
+
+  // Strict preference order:
+  // 1) For public files, any /api/serve URL (edge cached)
+  // 2) Signed URL (private)
+  // 3) Non-signed URL that is not a raw storage host
+  // 4) Thumbnail as a last resort
   let chosen: string | null = null
-  if ((isServe || isProxy) && url && publicEntry) {
-    chosen = url
-  } else if (url && !signed) {
-    chosen = url
-  } else {
-    chosen = signed || url || (entry as any).thumbnail_url || null
-  }
+  if (publicEntry && (looksServe(url) || looksProxy(url))) chosen = url
+  else if (publicEntry && looksServe(thumb)) chosen = thumb
+  else if (signed) chosen = signed
+  else if (url && !looksRawStorage(url)) chosen = url
+  else if (thumb && !looksRawStorage(thumb)) chosen = thumb
   if (!chosen) return null
   // Avoid cache-buster on signed URLs
   const isSigned = /[?&]X-Amz-(Signature|Credential)=/i.test(chosen)

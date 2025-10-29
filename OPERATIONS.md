@@ -204,3 +204,36 @@ ssh dev 'bash -lc "cd ~/apps/castingly-v2 && npm run build && pm2 restart castin
 ```
 ssh dev 'bash -lc "cd ~/apps/castingly-v2 && TO=you@example.com node tools/sendgrid-test.mjs"'
 ```
+### Media: Broken Image Swaps / Cleanup
+
+Detect if a good `/api/serve` image is replaced by a raw S3/OVH URL after login:
+
+```
+BASE_URL=https://castingly.dailey.dev \\
+USERNAME='actor.demo@castingly.com' \\
+PASSWORD='Act0r!2025' \\
+npm run -s tools:check:image-swap
+```
+
+Artifacts: `artifacts/check/events.json`, `artifacts/check/profile.png`.
+
+Run DMAPI cleaner for public headshots (dry-run):
+
+```
+ACTOR_ID='<actor-uuid>' \\
+DMAPI_BASE_URL='https://media.dailey.cloud' \\
+DAILEY_CORE_AUTH_URL='https://core.dailey.cloud' \\
+DMAPI_SERVICE_EMAIL='dmapi-service@castingly.com' \\
+DMAPI_SERVICE_PASSWORD='********' \\
+npm run -s dmapi:clean:headshots
+```
+
+Apply deletes:
+
+```
+ACTOR_ID='<actor-uuid>' DELETE=1 npm run -s dmapi:clean:headshots
+```
+
+Notes:
+- The tiles API (server) emits `/api/serve` URLs for public assets and HEAD‑validates fallback URLs.
+- The client never swaps a working image to a raw storage host and removes tiles on error.

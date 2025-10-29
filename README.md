@@ -273,7 +273,50 @@ castingly-v2/
 
 6. **Access the application**
    - Local: http://localhost:3000
-   - Production behind Apache proxies to http://127.0.0.1:3003 (PM2 `PORT=3003`)
+- Production behind Apache proxies to http://127.0.0.1:3003 (PM2 `PORT=3003`)
+
+### Browser Automation via MCP (Playwright)
+
+This repo includes a minimal MCP server that exposes Playwright controls so MCP‑aware clients can drive a browser session to test Castingly.
+
+- Start server (stdio):
+  ```bash
+  npm run mcp:browser
+  ```
+- Output directory: `artifacts/mcp-browser/` (screenshots and HAR)
+- Default launch is headless (works without X server). Set `{ headless: false }` in the `launch` tool only if a display is available.
+
+Exposed tools
+
+- `launch({ headless?, width?, height?, baseUrl?, harName? })`
+- `goto({ url, waitUntil?, timeout? })`
+- `fill({ selector, value, timeout? })`
+- `click({ selector, timeout? })`
+- `wait_for_selector({ selector, state?, timeout? })`
+- `wait_for_url({ equals?, pattern?, timeout? })`
+- `screenshot({ path?, fullPage? })` → returns file path
+- `get_console()` → returns and clears collected console events
+- `get_network()` → returns and clears collected network events
+- `close()`
+
+Example flow (pseudocode via MCP tools)
+
+1) `launch({ headless: true, baseUrl: "http://localhost:4874" })`
+2) `goto({ url: "/login" })`
+3) `fill({ selector: "input[name=\"email\"]", value: "actor.demo@castingly.com" })`
+4) `fill({ selector: "input[type=password]", value: "Act0r!2025" })`
+5) `click({ selector: "button:has-text(\"Sign In\")" })`
+6) `wait_for_url({ pattern: "/actor/dashboard" })`
+7) `screenshot({ path: "after-login.png", fullPage: true })`
+8) `get_console()` / `get_network()`
+
+Client configuration
+
+Point your MCP client at the stdio command:
+
+- Command: `npm`
+- Args: `["run", "mcp:browser"]`
+- CWD: project root (e.g., `/home/jonny/apps/castingly-v2`)
 
 ### Inside Connect: applying DB schema
 ```bash
@@ -328,6 +371,9 @@ View our comprehensive [Beta Release Roadmap](./BETA_RELEASE_ROADMAP.md) for det
 - `npm run build` - Build for production
 - `npm run start` - Start production server
 - `npm run lint` - Run ESLint
+- `npm run login:capture` - Headless login capture (HAR + console + screenshot)
+- `npm run tools:check:image-swap` - Detects if a good `/api/serve` image is later replaced by a raw S3/OVH URL
+- `npm run dmapi:clean:headshots` - DMAPI cleaner for public headshots (dry-run by default)
 - `pm2 start ecosystem.config.js --only castingly-v2` - Launch compiled app under PM2
  - `node scripts/backfill-avatars-via-app.mjs --host http://127.0.0.1:3003` - Backfill avatar pointers via app
  - `node scripts/backfill-avatars.mjs` - Backfill avatar pointers via DMAPI service
@@ -790,3 +836,14 @@ Castingly revolutionizes the casting process by providing a centralized platform
 Built with modern web technologies and real industry data, Castingly v2 represents the future of professional casting platforms.
 
 **Ready for Beta • Built with ❤️ for the Entertainment Industry**
+### Broken Images & Tiles
+
+- Tiles prefer DMAPI `/api/serve` URLs for public assets and exclude raw storage hosts (S3/OVH). Client removes tiles immediately on `<img>` error (no gray placeholders).
+
+Troubleshoot swaps:
+- `BASE_URL=<site> USERNAME=<email> PASSWORD=<pwd> npm run -s tools:check:image-swap`
+- Artifacts: `artifacts/check/events.json`, `artifacts/check/profile.png`
+
+Clean junk public headshots (dry-run):
+- `ACTOR_ID='<actor-uuid>' DMAPI_BASE_URL='https://media.dailey.cloud' DAILEY_CORE_AUTH_URL='https://core.dailey.cloud' DMAPI_SERVICE_EMAIL='...' DMAPI_SERVICE_PASSWORD='...' npm run -s dmapi:clean:headshots`
+- Apply deletes: add `DELETE=1`
