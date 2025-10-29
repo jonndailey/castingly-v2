@@ -84,7 +84,7 @@ const recentSubmissions = [
 export default function ActorDashboard() {
   const router = useRouter()
   const { user, token } = useAuthStore()
-  const { profile, loading, error } = useActorProfile(user?.id)
+  const { profile, loading, error, refresh: refreshProfile } = useActorProfile(user?.id)
   const [localAvatar, setLocalAvatar] = React.useState<string | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [hideCompletion, setHideCompletion] = React.useState<boolean>(false)
@@ -113,20 +113,17 @@ export default function ActorDashboard() {
         body: form,
       })
       if (!res.ok) throw new Error('Upload failed')
-      const j = await res.json().catch(() => ({}))
-      const first = Array.isArray(j?.file) ? j.file[0] : j?.file || {}
-      const url = first?.signed_url || first?.public_url || first?.url || first?.proxy_url || null
-      if (url) {
-        // Persist avatar_url
-        await fetch(`/api/actors/${encodeURIComponent(String(actorIdForPatch))}/profile`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ profile_image: url }),
-        })
-      }
+      // Persist a stable safe avatar endpoint so it always resolves the latest small public headshot
+      const safeAvatar = `/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}`
+      await fetch(`/api/actors/${encodeURIComponent(String(actorIdForPatch))}/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ profile_image: safeAvatar }),
+      })
+      try { refreshProfile() } catch {}
     } catch (e) {
       // Reset optimistic preview on failure
       setLocalAvatar(null)
@@ -139,10 +136,28 @@ export default function ActorDashboard() {
     }
   }, [user, router])
   
-  if (!user) return null
-  
   // Build a safe avatar URL we can preload immediately (does not depend on profile fetch)
-  const safeAvatarHref = `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}`
+  const safeAvatarHref = user ? `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}` : ''
+  // Lightweight headshot tiles for fast DMAPI /api/serve thumbnails
+  const [fastHeadshotTiles, setFastHeadshotTiles] = React.useState<Array<{ thumb: string; full: string; name: string }>>([])
+  React.useEffect(() => {
+    if (!user?.id) return
+    const id = String(user.id)
+    let aborted = false
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' })
+        if (!r.ok) return
+        const j = await r.json().catch(() => null)
+        if (!j || aborted) return
+        const tiles = Array.isArray(j.tiles) ? j.tiles : []
+        setFastHeadshotTiles(tiles)
+      } catch {}
+    })()
+    return () => { aborted = true }
+  }, [user?.id])
+
+  if (!user) return null
 
   if (loading) {
     return (
@@ -276,12 +291,13 @@ export default function ActorDashboard() {
                     editable
                     size="xl"
                     alt={profile.name}
-                    // Make the safe avatar (server-resolved redirect) the first real image for instant paint.
+                    // Prefer API-provided avatar_url (DMAPI /api/serve) for stable cached loads; then user avatar; fallback to safe proxy.
                     src={
                       (localAvatar || undefined) ||
-                      safeAvatarHref ||
+                      (fastHeadshotTiles[0]?.thumb || undefined) ||
+                      (profile.avatar_url || undefined) ||
                       (user?.avatar_url || undefined) ||
-                      (profile.avatar_url || undefined)
+                      safeAvatarHref
                     }
                     fallback={profile.name}
                     onUpload={handleAvatarUpload}

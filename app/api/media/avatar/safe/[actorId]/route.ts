@@ -33,15 +33,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
       'Cache-Control': 'private, max-age=60, must-revalidate',
       Vary: 'Authorization',
     }
-    if (url && url.startsWith('/')) {
-      // Avoid forwarding to legacy proxy pointers which may 404
-      if (!url.startsWith('/api/media/proxy?')) {
-        return new Response(null, { status: 302, headers: { Location: url, ...cacheHeaders } })
-      }
-    }
-    if (url && /^https?:\/\//i.test(url)) {
-      return new Response(null, { status: 302, headers: { Location: url, ...cacheHeaders } })
-    }
+    // Intentionally ignore stored avatar_url for redirect to avoid stale/self-loop pointers.
+    // We will resolve latest public headshot below and return a stable DMAPI /api/serve URL.
 
     // Resolve from public headshots folder directly
     try {
@@ -52,13 +45,27 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
       })
       const files = Array.isArray(folder?.files) ? folder.files : []
       if (files.length > 0) {
-        const pick = (arr: any[]) =>
-          arr.find((f) => /large\./i.test(String(f.name || ''))) ||
-          arr.find((f) => /medium\./i.test(String(f.name || ''))) ||
-          arr.find((f) => /small\./i.test(String(f.name || ''))) ||
-          arr[0]
-        const chosen: any = pick(files)
-        const direct = chosen?.public_url || chosen?.url || chosen?.signed_url || null
+        // Prefer the small variant for avatars; if multiple, pick the one with the highest leading timestamp
+        const smalls = files.filter((f: any) => /_small\./i.test(String(f?.name || '')))
+        const chooseNewestByTs = (arr: any[]) => {
+          return arr
+            .map((f) => ({ f, ts: (() => { const m = String(f?.name || '').match(/^(\d{10,})/); return m ? parseInt(m[1], 10) : 0 })() }))
+            .sort((a, b) => b.ts - a.ts)[0]?.f
+        }
+        let chosen: any = smalls.length ? chooseNewestByTs(smalls) : chooseNewestByTs(files)
+        if (!chosen) chosen = files[0]
+        // Prefer stable DMAPI /api/serve for public bucket
+        let direct = chosen?.public_url || chosen?.url || chosen?.signed_url || null
+        try {
+          const objName = String(chosen?.name || '').trim()
+          if (objName) {
+            const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
+            if (base) {
+              const tail = `actors/${actorId}/headshots/`
+              direct = `${base}/api/serve/files/${encodeURIComponent(String(actorId))}/castingly-public/${tail}${encodeURIComponent(objName)}`
+            }
+          }
+        } catch {}
         if (direct) {
           try {
             const namePart = String(chosen?.name || '')
@@ -83,7 +90,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
               } catch {}
             }
           } catch {}
-          return new Response(null, { status: 302, headers: { Location: direct, ...cacheHeaders } })
+          try {
+            const resp = await fetch(direct)
+            const hdrs = new Headers(resp.headers)
+            hdrs.set('Cache-Control', 'public, max-age=31536000, immutable')
+            return new Response(await resp.arrayBuffer(), { status: 200, headers: hdrs })
+          } catch {
+            return new Response(null, { status: 302, headers: { Location: direct, ...cacheHeaders } })
+          }
         }
       }
     } catch {}
@@ -130,7 +144,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
               } catch {}
             }
           } catch {}
-          return new Response(null, { status: 302, headers: { Location: direct, ...cacheHeaders } })
+          try {
+            const resp = await fetch(direct)
+            const hdrs = new Headers(resp.headers)
+            hdrs.set('Cache-Control', 'private, no-store')
+            return new Response(await resp.arrayBuffer(), { status: 200, headers: hdrs })
+          } catch {
+            return new Response(null, { status: 302, headers: { Location: direct, ...cacheHeaders } })
+          }
         }
       }
     } catch {}

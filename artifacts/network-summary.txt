@@ -1,0 +1,6 @@
+Counts: {"total":384,"requests":192,"responses":192}
+Responses with avatar/safe: 0
+Responses with api/serve: 4
+Responses to S3 host: 0
+
+First 10 error responses:

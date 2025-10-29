@@ -33,13 +33,19 @@ function pickTiles(files: Array<{ name?: string; path?: string }>, actorId: stri
     if (!variant) g.original = url
     else g[variant] = url as any
   }
-  const tiles: Tile[] = []
+  // Convert to tiles and sort newest-first by leading timestamp if present
+  const enriched: Array<{ tile: Tile; ts: number }> = []
   for (const [, g] of groups) {
     const thumb = g.small || g.thumbnail || g.medium || g.original || g.large
     const full = g.original || g.large || g.medium || g.small || g.thumbnail
-    if (thumb && full) tiles.push({ thumb, full, name: g.baseName })
+    if (thumb && full) {
+      const m = g.baseName.match(/^(\d{10,})[_.-]?/)
+      const ts = m ? parseInt(m[1], 10) : 0
+      enriched.push({ tile: { thumb, full, name: g.baseName }, ts: Number.isFinite(ts) ? ts : 0 })
+    }
   }
-  return tiles
+  enriched.sort((a, b) => b.ts - a.ts)
+  return enriched.map((e) => e.tile)
 }
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ actorId: string }> }) {

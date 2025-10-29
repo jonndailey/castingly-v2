@@ -183,3 +183,24 @@ DMAPI host (dmapiapp01) quick refs:
 Cloudflare checks (from your workstation):
 - Warm: `curl -I 'https://media.dailey.cloud/api/serve/files/<uid>/castingly-public/actors/<uid>/headshots/<name>.webp'`
 - Repeat: expect `cf-cache-status: HIT`, `Cache-Control: public, max-age=31536000, immutable`.
+### Email (SendGrid) — configure and test
+
+1) Set env in `.env.production` on the app server:
+
+```
+SENDGRID_API_KEY=...            # or SEND_GRID_API_KEY
+SENDGRID_FROM_EMAIL=noreply@castingly.com
+SENDGRID_FROM_NAME=Castingly
+```
+
+2) Rebuild + restart to load new envs:
+
+```
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && npm run build && pm2 restart castingly-v2 --update-env"'
+```
+
+3) Send a test email:
+
+```
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && TO=you@example.com node tools/sendgrid-test.mjs"'
+```

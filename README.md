@@ -17,6 +17,8 @@ A comprehensive platform built with Next.js 15, TypeScript, and MySQL that conne
 - Faster, resilient images
   - `/api/media/proxy` issues 302 redirects to working URLs and picks the best image variant
   - Short DMAPI timeouts to avoid page stalls; longer cache for proxy/avatar redirects
+  - Safe avatar endpoint now streams bytes (200) to avoid redirect loops; UI prefers DMAPI `/api/serve` tiles
+  - Video/audio proxies redirect to signed/public URLs for correct object names; images prefer `/api/serve`
 - Distinct logins per role
   - When authenticating via Dailey Core, Castingly overrides the role from the users table if present to ensure agent/casting/admin experiences are correct
 - Navigation and routing
@@ -239,6 +241,18 @@ castingly-v2/
    ```bash
    npm install
    ```
+
+3. **Optional: Configure SendGrid for emails**
+   - Add to `.env.local`:
+     - `SENDGRID_API_KEY=...`
+     - `SENDGRID_FROM_EMAIL=noreply@castingly.com`
+     - `SENDGRID_FROM_NAME=Castingly` (optional)
+   - Test locally:
+     ```bash
+     TO=you@example.com node tools/sendgrid-test.mjs
+     ```
+
+4. **Run the app**
 
 3. **Environment setup**
    ```bash

@@ -115,18 +115,26 @@ export async function POST(
           files = Array.isArray(list?.files) ? list.files : []
         }
         const candidateFiles = files.filter((f: any) => {
-        const metaCat = f?.metadata?.category
-        const path = (f?.metadata?.folderPath || f?.folder_path || f?.path || '').toString()
-        const byMeta = metaCat === category
-        const byPath = category === 'headshot' ? /\/headshots\/?$/i.test(path) || path.includes('/headshots')
-                      : category === 'gallery' ? path.includes('/gallery')
-                      : true
-        const isPublic = f?.is_public === true || String(f?.metadata?.access || '').toLowerCase() === 'public'
-        if (category === 'headshot' || category === 'gallery') {
-          return (byMeta || byPath) && isPublic
-        }
-        return byMeta || byPath
-      })
+          const metaCat = String(f?.metadata?.category || '').toLowerCase()
+          const folder = (f?.metadata?.folderPath || f?.folder_path || f?.path || '').toString().toLowerCase()
+          const byMeta = metaCat === String(category)
+          let byPath = false
+          switch (category) {
+            case 'headshot': byPath = /\/headshots\/?$/i.test(folder) || folder.includes('/headshots'); break
+            case 'gallery': byPath = folder.includes('/gallery'); break
+            case 'reel': byPath = folder.includes('/reels'); break
+            case 'resume': byPath = folder.includes('/resumes'); break
+            case 'self_tape': byPath = folder.includes('/self-tapes'); break
+            case 'voice_over': byPath = folder.includes('/voice-over'); break
+            case 'document': byPath = folder.includes('/documents'); break
+            default: byPath = true; break
+          }
+          const isPublic = f?.is_public === true || String(f?.metadata?.access || '').toLowerCase() === 'public'
+          if (category === 'headshot' || category === 'gallery') {
+            return (byMeta || byPath) && isPublic
+          }
+          return byMeta || byPath
+        })
       // Dedupe image variants (_large/_medium/_small) so one uploaded image counts once
       const variantKey = (n: string) => n.toLowerCase().replace(/_(large|medium|small)(?=\.[^.]+$)/i, '')
       const seen = new Set<string>()

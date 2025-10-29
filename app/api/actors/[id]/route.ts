@@ -408,21 +408,76 @@ export async function GET(
     let media: CategorisedMedia
     if (includeMedia && dmapiFiles.length > 0) {
       const categorised = categoriseDmapiFiles(dmapiFiles, String(actor.id))
-      media = includePrivate
-        ? categorised
-        : filterToPublicMedia(categorised)
+      media = includePrivate ? categorised : filterToPublicMedia(categorised)
+      const byDate = (arr: any[]) => arr.sort((a: any, b: any) => new Date(b.uploaded_at || 0).getTime() - new Date(a.uploaded_at || 0).getTime())
+      try {
+        media.headshots = byDate(media.headshots || [])
+        media.gallery = byDate(media.gallery || [])
+        media.reels = byDate(media.reels || [])
+        media.other = byDate(media.other || [])
+        media.all = byDate(media.all || [])
+      } catch {}
     } else {
       media = categoriseLegacyMedia(legacyMedia)
     }
 
-    let avatarFromDmapi = media.headshots?.[0]?.url || media.headshots?.[0]?.signed_url
+    let avatarFromDmapi = media.headshots?.[0]?.url || media.headshots?.[0]?.thumbnail_url || media.headshots?.[0]?.signed_url
+    // Prefer newest public small variant from castingly-public via folder listing
+    if (!avatarFromDmapi) {
+      try {
+        const folder = await listBucketFolder({
+          bucketId: 'castingly-public',
+          userId: String(actor.id),
+          path: `actors/${actor.id}/headshots`,
+        })
+        const files = Array.isArray((folder as any)?.files) ? (folder as any).files : []
+        if (files.length > 0) {
+          const smalls = files.filter((x: any) => /_small\./i.test(String(x?.name || '')))
+          const scored = (arr: any[]) => arr
+            .map((x) => ({ x, ts: (() => { const m = String(x?.name || '').match(/^(\d{10,})/); return m ? parseInt(m[1], 10) : 0 })() }))
+            .sort((a, b) => b.ts - a.ts)
+          const pick = (smalls.length ? scored(smalls) : scored(files))[0]?.x
+          if (pick?.name) {
+            const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
+            if (base) {
+              const tail = `actors/${actor.id}/headshots/`
+              avatarFromDmapi = `${base}/api/serve/files/${encodeURIComponent(String(actor.id))}/castingly-public/${tail}${encodeURIComponent(String(pick.name))}`
+            }
+          }
+        }
+      } catch {}
+    }
     if (!avatarFromDmapi) {
       try {
         // Lightweight headshot lookup even when includeMedia=false
         const quick = await listActorDmapiFiles(String(actor.id), { limit: 1, category: 'headshot', order: 'desc', sort: 'uploaded_at' })
         const f: any = Array.isArray((quick as any)?.files) && (quick as any).files[0]
         if (f) {
-          avatarFromDmapi = f.signed_url || f.public_url || f.url || null
+          try {
+            const metadata = (f.metadata || {}) as Record<string, unknown>
+            const bucketId = String((metadata as any).bucketId || (metadata as any).bucket_id || '').toLowerCase()
+            const folderPath = String((metadata as any).folderPath || (metadata as any).folder_path || '')
+            const storageKey: string | undefined = (f as any)?.storage_key
+            const storageName = typeof storageKey === 'string' && storageKey.includes('/')
+              ? storageKey.split('/').pop() || ''
+              : ''
+            const name = (storageName || String(f.original_filename || (f as any).name || '')).trim()
+            const visibility = String(
+              (f as any).is_public ? 'public' : ((metadata as any).access || (metadata as any).visibility || '')
+            ).toLowerCase()
+            const isPublic = visibility === 'public' || bucketId === 'castingly-public'
+            let preferred: string | null = null
+            if (isPublic && bucketId === 'castingly-public' && name) {
+              const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
+              if (base) {
+                const tail = folderPath ? `${String(folderPath).replace(/^\/+|\/+$/g, '')}/` : ''
+                preferred = `${base}/api/serve/files/${encodeURIComponent(String(actor.id))}/castingly-public/${tail}${encodeURIComponent(name)}`
+              }
+          }
+          avatarFromDmapi = preferred || (f.url || f.thumbnail_url || f.signed_url || f.public_url || null)
+        } catch {
+          avatarFromDmapi = (f.url || f.thumbnail_url || f.signed_url || f.public_url || null)
+        }
         }
       } catch {}
     }
@@ -639,10 +694,11 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
       directUrlCandidate && originalLower && directName === originalLower && storageLower && directName !== storageLower
     )
 
-    // Prefer stable edge-cached URL for public items in castingly-public via DMAPI /api/serve
+    // Prefer stable edge-cached URL for public images in castingly-public via DMAPI /api/serve
     let preferredUrl: string | null = null
     const isPublic = resolveVisibility(file, metadata) === 'public'
-    if (isPublic && bucketId && bucketId.toLowerCase() === 'castingly-public' && actorId) {
+    const isImage = typeof file.mime_type === 'string' && file.mime_type.toLowerCase().startsWith('image/')
+    if (isPublic && isImage && bucketId && bucketId.toLowerCase() === 'castingly-public' && actorId) {
       try {
         const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
         if (base) {

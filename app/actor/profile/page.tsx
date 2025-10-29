@@ -134,23 +134,23 @@ export default function ActorProfile() {
   const [fastGalleryTiles, setFastGalleryTiles] = useState<Array<{ thumbSrc: string; fullSrc: string; alt: string }>>([])
 
   // Fast path: prefetch public small headshot tiles via lightweight API
+  const fetchHeadshotTiles = useCallback(async (id: string) => {
+    try {
+      const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' })
+      if (!r.ok) return
+      const j = await r.json()
+      const tiles = Array.isArray(j?.tiles) ? j.tiles : []
+      const mapped = tiles.map((t: any) => ({ thumbSrc: String(t.thumb), fullSrc: String(t.full), alt: String(t.name || 'Headshot') }))
+      setFastHeadshotTiles(mapped)
+    } catch {}
+  }, [])
   useEffect(() => {
     const id = String((actorData as any)?.id || user?.id || '')
     if (!id) return
     let aborted = false
-    ;(async () => {
-      try {
-        const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' })
-        if (!r.ok) return
-        const j = await r.json()
-        if (aborted) return
-        const tiles = Array.isArray(j?.tiles) ? j.tiles : []
-        const mapped = tiles.map((t: any) => ({ thumbSrc: String(t.thumb), fullSrc: String(t.full), alt: String(t.name || 'Headshot') }))
-        setFastHeadshotTiles(mapped)
-      } catch {}
-    })()
+    ;(async () => { if (!aborted) await fetchHeadshotTiles(id) })()
     return () => { aborted = true }
-  }, [(actorData as any)?.id, user?.id])
+  }, [(actorData as any)?.id, user?.id, fetchHeadshotTiles])
 
   // Fast path: prefetch public small gallery tiles via lightweight API
   useEffect(() => {
@@ -184,7 +184,7 @@ export default function ActorProfile() {
   const primaryHeadshot = headshots[0] ?? null
 
   // Group variants and pick small for grid, full for lightbox
-  type VariantTile = { id?: string; thumbSrc: string; fullSrc: string; alt: string }
+  type VariantTile = { id?: string; thumbSrc: string; fullSrc: string; alt: string; ts?: number }
   function splitVariant(name?: string | null) {
     const n = String(name || '').toLowerCase()
     const m = n.match(/^(.*?)(?:_(large|medium|small|thumbnail))?(\.[^.]+)?$/)
@@ -229,9 +229,12 @@ export default function ActorProfile() {
         thumbSrc: getMediaUrl(thumbEntry) ?? '',
         fullSrc: getMediaUrl(fullEntry) ?? '',
         alt: String((fullEntry as any).name || base),
+        ts: (() => { try { return Date.parse(String((fullEntry as any)?.uploaded_at || '')) || undefined } catch { return undefined } })(),
       }
       if (tile.thumbSrc && tile.fullSrc) tiles.push(tile)
     }
+    // Newest first
+    tiles.sort((a, b) => (b.ts || 0) - (a.ts || 0))
     return tiles
   }
   const galleryTilesFromMedia: VariantTile[] = buildVariantTiles((media?.gallery ?? []))
@@ -323,9 +326,29 @@ export default function ActorProfile() {
       }
       setUploadMessage('Uploaded successfully')
       setTimeout(() => setUploadMessage(''), 2500)
-      // Refresh client media immediately to reflect new headshot and update counters
+      // Refresh client media and tiles immediately to reflect new headshot
       try { reloadMedia() } catch {}
       router.refresh()
+      try {
+        if ((pendingCategory === 'headshot') && user?.id) {
+          await fetchHeadshotTiles(String(user.id))
+        }
+      } catch {}
+      // Persist a stable avatar pointer so profile reloads resolve via safe endpoint immediately
+      try {
+        if ((pendingCategory === 'headshot') && user?.id && token) {
+          const safeAvatar = `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}`
+          await fetch(`/api/actors/${encodeURIComponent(String(user.id))}/profile`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ profile_image: safeAvatar }),
+          })
+          try { await refreshProfile() } catch {}
+        }
+      } catch {}
     } catch (err: any) {
       setUploadMessage(err?.message || 'Upload failed')
       setTimeout(() => setUploadMessage(''), 3500)
@@ -1138,13 +1161,13 @@ export default function ActorProfile() {
                       return (
                         <div
                           key={reel.id}
-                          className="flex items-center justify-between rounded-lg bg-gray-50 p-3"
+                          className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 rounded-lg bg-gray-50 p-3 w-full"
                         >
-                          <div className="flex items-center gap-3">
-                            <Film className="h-5 w-5 text-primary-600" />
-                            <span className="font-medium">{reel.name || 'Demo Reel'}</span>
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                            <Film className="h-5 w-5 text-primary-600 flex-shrink-0" />
+                            <span className="font-medium text-sm sm:text-base truncate max-w-[70vw] sm:max-w-none break-words">{reel.name || 'Demo Reel'}</span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto sm:justify-end">
                             {reelUrl && (
                               <Button
                                 size="sm"
@@ -1179,12 +1202,12 @@ export default function ActorProfile() {
                     {(media?.self_tapes ?? []).map((tape) => {
                       const tapeUrl = getMediaUrl(tape)
                       return (
-                        <div key={tape.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                          <div className="flex items-center gap-3">
-                            <Film className="h-5 w-5 text-primary-600" />
-                            <span className="font-medium">{tape.name || 'Self-Tape'}</span>
+                        <div key={tape.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 rounded-lg bg-gray-50 p-3 w-full">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                            <Film className="h-5 w-5 text-primary-600 flex-shrink-0" />
+                            <span className="font-medium text-sm sm:text-base truncate max-w-[70vw] sm:max-w-none break-words">{tape.name || 'Self-Tape'}</span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto sm:justify-end">
                             {tapeUrl && (
                               <Button size="sm" variant="ghost" onClick={() => window.open(tapeUrl, '_blank')}>
                                 View
@@ -1215,11 +1238,11 @@ export default function ActorProfile() {
                     {(media?.voice_over ?? []).map((vo) => {
                       const url = getMediaUrl(vo)
                       return (
-                        <div key={vo.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                          <div className="flex items-center gap-3">
-                            <span className="font-medium">{vo.name || 'Voice Over'}</span>
+                        <div key={vo.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 rounded-lg bg-gray-50 p-3 w-full">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                            <span className="font-medium text-sm sm:text-base truncate max-w-[70vw] sm:max-w-none break-words">{vo.name || 'Voice Over'}</span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto sm:justify-end">
                             {url && (
                               <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
                                 Listen
@@ -1250,12 +1273,12 @@ export default function ActorProfile() {
                     {(media?.resumes ?? []).map((doc) => {
                       const url = getMediaUrl(doc)
                       return (
-                        <div key={doc.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                          <div className="flex items-center gap-3">
-                            <FileText className="h-5 w-5 text-primary-600" />
-                            <span className="font-medium">{doc.name || 'Resume'}</span>
+                        <div key={doc.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 rounded-lg bg-gray-50 p-3 w-full">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                            <FileText className="h-5 w-5 text-primary-600 flex-shrink-0" />
+                            <span className="font-medium text-sm sm:text-base truncate max-w-[70vw] sm:max-w-none break-words">{doc.name || 'Resume'}</span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto sm:justify-end">
                             {url && (
                               <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
                                 View
@@ -1286,10 +1309,10 @@ export default function ActorProfile() {
                     {(actorData?.media?.documents ?? []).map((doc) => {
                       const url = getMediaUrl(doc)
                       return (
-                        <div key={doc.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                          <div className="flex items-center gap-3">
-                            <FileText className="h-5 w-5 text-primary-600" />
-                            <span className="font-medium">{doc.name || 'Document'}</span>
+                        <div key={doc.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 rounded-lg bg-gray-50 p-3 w-full">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                            <FileText className="h-5 w-5 text-primary-600 flex-shrink-0" />
+                            <span className="font-medium text-sm sm:text-base truncate max-w-[70vw] sm:max-w-none break-words">{doc.name || 'Document'}</span>
                           </div>
                           {url && (
                             <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>

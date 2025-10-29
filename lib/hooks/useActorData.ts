@@ -69,7 +69,9 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
         const id = actorId || user?.id
 
         if (!id) {
-          setError('No actor ID provided')
+          // Wait for auth store hydration instead of showing a hard error
+          setError(null)
+          setLoading(true)
           return
         }
 
@@ -86,7 +88,8 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
 
         const qs = new URLSearchParams()
         if (options?.includeMedia) qs.set('media', '1')
-        const response = await fetch(`/api/actors/${id}?${qs.toString()}${qs.toString() ? '&' : ''}ts=${Date.now()}` , {
+        const url = `/api/actors/${id}?${qs.toString()}${qs.toString() ? '&' : ''}ts=${Date.now()}`
+        const response = await fetch(url, {
           headers: token
             ? {
                 Authorization: `Bearer ${token}`,
@@ -94,8 +97,21 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
             : undefined,
           cache: 'no-store',
         })
-
         if (!response.ok) {
+          // Retry once on transient 401/403 after a short delay (store may not have token yet)
+          if (response.status === 401 || response.status === 403) {
+            await new Promise((r) => setTimeout(r, 300))
+            const retry = await fetch(url, {
+              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+              cache: 'no-store',
+            })
+            if (!retry.ok) throw new Error('Failed to fetch profile')
+            const data = await retry.json()
+            setProfile(data)
+            const cacheKey = `${id}|m=${options?.includeMedia ? '1' : '0'}`
+            profileCache.set(cacheKey, { data, ts: Date.now() })
+            return
+          }
           throw new Error('Failed to fetch profile')
         }
 
@@ -103,9 +119,7 @@ export function useActorProfile(actorId?: string, options?: { includeMedia?: boo
         setProfile(data)
         profileCache.set(cacheKey, { data, ts: Date.now() })
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : 'Failed to load profile'
-        )
+        setError(err instanceof Error ? err.message : 'Failed to load profile')
       } finally {
         setLoading(false)
       }
@@ -132,14 +146,26 @@ export function useActorMedia(actorId?: string) {
         setLoading(true)
         const id = actorId || user?.id
         if (!id) {
-          setError('No actor ID provided')
+          setError(null)
+          setLoading(true)
           return
         }
-        const response = await fetch(`/api/actors/${id}?media=1&ts=${Date.now()}` , {
+        const url = `/api/actors/${id}?media=1&ts=${Date.now()}`
+        const response = await fetch(url , {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           cache: 'no-store',
         })
-        if (!response.ok) throw new Error('Failed to fetch media')
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 403) {
+            await new Promise((r) => setTimeout(r, 300))
+            const retry = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined, cache: 'no-store' })
+            if (!retry.ok) throw new Error('Failed to fetch media')
+            const data = await retry.json()
+            setMedia(data?.media ?? null)
+            return
+          }
+          throw new Error('Failed to fetch media')
+        }
         const data = await response.json()
         setMedia(data?.media ?? null)
       } catch (err) {

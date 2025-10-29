@@ -1,0 +1,78 @@
+{
+  "when": "2025-10-29T01:39:24.644Z",
+  "baseUrl": "https://castingly.dailey.dev",
+  "console": [
+    {
+      "ts": "2025-10-29T01:39:09.402Z",
+      "stage": "login",
+      "type": "log",
+      "text": "🎭 Castingly Login Attempt: actor.demo@castingly.com",
+      "args": 2,
+      "location": {
+        "url": "https://castingly.dailey.dev/_next/static/chunks/6552-6c5ff3a9ef25f66d.js",
+        "lineNumber": 0,
+        "columnNumber": 8683
+      }
+    },
+    {
+      "ts": "2025-10-29T01:39:09.402Z",
+      "stage": "login",
+      "type": "log",
+      "text": "🎭 Castingly Login Attempt: actor.demo@castingly.com",
+      "args": 2,
+      "location": {
+        "url": "https://castingly.dailey.dev/_next/static/chunks/6552-6c5ff3a9ef25f66d.js",
+        "lineNumber": 0,
+        "columnNumber": 8683
+      }
+    },
+    {
+      "ts": "2025-10-29T01:39:09.786Z",
+      "stage": "post-login",
+      "type": "log",
+      "text": "🎭 API Response: {status: 200, source: dailey-core}",
+      "args": 2,
+      "location": {
+        "url": "https://castingly.dailey.dev/_next/static/chunks/6552-6c5ff3a9ef25f66d.js",
+        "lineNumber": 0,
+        "columnNumber": 8897
+      }
+    },
+    {
+      "ts": "2025-10-29T01:39:09.786Z",
+      "stage": "post-login",
+      "type": "log",
+      "text": "🎭 API Response: {status: 200, source: dailey-core}",
+      "args": 2,
+      "location": {
+        "url": "https://castingly.dailey.dev/_next/static/chunks/6552-6c5ff3a9ef25f66d.js",
+        "lineNumber": 0,
+        "columnNumber": 8897
+      }
+    },
+    {
+      "ts": "2025-10-29T01:39:09.786Z",
+      "stage": "post-login",
+      "type": "log",
+      "text": "✅ Login successful via: dailey-core",
+      "args": 2,
+      "location": {
+        "url": "https://castingly.dailey.dev/_next/static/chunks/6552-6c5ff3a9ef25f66d.js",
+        "lineNumber": 0,
+        "columnNumber": 9838
+      }
+    },
+    {
+      "ts": "2025-10-29T01:39:09.786Z",
+      "stage": "post-login",
+      "type": "log",
+      "text": "✅ Login successful via: dailey-core",
+      "args": 2,
+      "location": {
+        "url": "https://castingly.dailey.dev/_next/static/chunks/6552-6c5ff3a9ef25f66d.js",
+        "lineNumber": 0,
+        "columnNumber": 9838
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "boulevard-giftcard-extractor",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Safe Boulevard dashboard Gift Card extractor (single row)",
+  "scripts": {
+    "start": "node extract-one.mjs",
+    "install:browsers": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.56.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
+

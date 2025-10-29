@@ -169,8 +169,9 @@ function ActorPrimaryHeadshot({ actorId, fallback, name }: { actorId: string; fa
         const data = await res.json()
         const headshots = data?.media?.headshots || []
         const first = headshots[0]
-        const url = first?.signed_url || first?.public_url || first?.url || first?.thumbnail_url || null
-        const display = versionedUrl(url, first?.uploaded_at)
+        // Prefer edge-cached serve URL (first.url) when available; then thumbnail; then signed; then public
+        const preferred = first?.url || first?.thumbnail_url || first?.signed_url || first?.public_url || null
+        const display = versionedUrl(preferred, first?.uploaded_at)
         setSrc(display)
       } catch {
         setSrc(null)
