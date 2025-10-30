@@ -269,14 +269,21 @@ export default function ActorDashboard() {
         const j = await r.json().catch(() => null)
         if (!j || aborted) return
         const tiles = Array.isArray(j.tiles) ? j.tiles : []
-        // Only update if we don't have a stable avatar yet and tiles are available
-        if (tiles.length > 0 && tiles[0]?.thumb && !localAvatar && !stableAvatarUrl) {
-          setStableAvatarUrl(tiles[0].thumb)
+        // Update to use actual headshot if available (prioritize over safe endpoint)
+        if (tiles.length > 0 && tiles[0]?.thumb && !localAvatar) {
+          const currentUrl = tiles[0].thumb
+          const currentBase = stableAvatarUrl?.split('?')[0]
+          const newBase = currentUrl.split('?')[0]
+          
+          // Only update if we have a different base URL
+          if (currentBase !== newBase) {
+            setStableAvatarUrl(currentUrl)
+          }
         }
       } catch {}
     })()
     return () => { aborted = true }
-  }, [user?.id, localAvatar, stableAvatarUrl, isUploading])
+  }, [user?.id, localAvatar, isUploading])
 
   if (!user) return null
 
