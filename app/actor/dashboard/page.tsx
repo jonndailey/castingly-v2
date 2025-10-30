@@ -25,6 +25,7 @@ import { ProfileAvatar } from '@/components/ui/avatar'
 import Head from 'next/head'
 import useAuthStore from '@/lib/store/auth-store'
 import { useActorProfile } from '@/lib/hooks/useActorData'
+import { useAvatarCache } from '@/lib/utils/avatar-cache'
 
 // Mock data for demo
 const stats = {
@@ -91,6 +92,8 @@ export default function ActorDashboard() {
   const [avatarLoaded, setAvatarLoaded] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [hideCompletion, setHideCompletion] = React.useState<boolean>(false)
+  const [cachedAvatarUrl, setCachedAvatarUrl] = React.useState<string | null>(null)
+  const { cacheAvatar, cacheAvatarFromBlob, getCachedAvatar, removeCachedAvatar } = useAvatarCache()
 
   useEffect(() => {
     if (profile?.preferences?.hideProfileCompletion) {
@@ -98,62 +101,67 @@ export default function ActorDashboard() {
     }
   }, [profile?.preferences?.hideProfileCompletion])
 
-  // Aggressive preloading strategy for faster avatar loading
+  // Avatar caching and preloading strategy for instant loading
   useEffect(() => {
     const userId = String(profile?.id || user?.id || '')
-    if (!userId) return
+    if (!userId || isUploading) return
 
-    // Preload avatar endpoint with high priority
-    const avatarApiUrl = `/api/media/avatar/safe/${encodeURIComponent(userId)}`
-    const preloadLink = document.createElement('link')
-    preloadLink.rel = 'preload'
-    preloadLink.href = avatarApiUrl
-    preloadLink.as = 'image'
-    preloadLink.setAttribute('fetchpriority', 'high')
-    preloadLink.crossOrigin = 'anonymous'
-    document.head.appendChild(preloadLink)
+    const loadAvatar = async () => {
+      try {
+        // First check cache for instant loading
+        const cached = await getCachedAvatar(userId)
+        if (cached) {
+          console.log('Avatar loaded from cache instantly:', cached.url.substring(0, 60) + '...')
+          setCachedAvatarUrl(cached.url)
+          setAvatarLoaded(true)
+          return
+        }
 
-    // Also preload the image directly using Image() for immediate caching
-    const avatarImg = new Image()
-    avatarImg.crossOrigin = 'anonymous'
-    const currentAvatarUrl = stableAvatarUrl || profile?.avatar_url || user?.avatar_url || avatarApiUrl
-    
-    // Only preload if not already loaded and not currently uploading
-    if (!avatarLoaded && !isUploading) {
-      avatarImg.src = currentAvatarUrl
-      avatarImg.onload = () => {
-        console.log('Preloaded avatar successfully:', currentAvatarUrl.substring(0, 60) + '...')
-        setAvatarLoaded(true) // Mark as loaded when preload completes
-      }
-      avatarImg.onerror = () => {
-        console.warn('Avatar preload failed, will try again on image render')
-        // For external services like ui-avatars, still mark as "loaded" to show content
-        if (currentAvatarUrl.includes('ui-avatars.com')) {
-          console.log('External avatar service detected, showing immediately')
+        // Build avatar URL
+        const avatarApiUrl = `/api/media/avatar/safe/${encodeURIComponent(userId)}`
+        const currentAvatarUrl = stableAvatarUrl || profile?.avatar_url || user?.avatar_url || avatarApiUrl
+
+        // Preload and cache the image
+        const cachedUrl = await cacheAvatar(userId, currentAvatarUrl)
+        if (cachedUrl) {
+          console.log('Avatar cached and ready:', cachedUrl.substring(0, 60) + '...')
+          setCachedAvatarUrl(cachedUrl)
           setAvatarLoaded(true)
+        } else {
+          // Fallback to regular loading with timeout
+          const avatarImg = new Image()
+          avatarImg.crossOrigin = 'anonymous'
+          avatarImg.src = currentAvatarUrl
+          avatarImg.onload = () => {
+            console.log('Avatar loaded via fallback:', currentAvatarUrl.substring(0, 60) + '...')
+            setAvatarLoaded(true)
+          }
+          avatarImg.onerror = () => {
+            console.warn('Avatar loading failed, showing anyway')
+            setAvatarLoaded(true)
+          }
+          
+          // Show after 1 second for better UX
+          setTimeout(() => {
+            if (!avatarLoaded) {
+              console.log('Avatar timeout, showing image')
+              setAvatarLoaded(true)
+            }
+          }, 1000)
         }
+      } catch (error) {
+        console.error('Avatar caching failed:', error)
+        setAvatarLoaded(true) // Show anyway
       }
-      
-      // Timeout for slow external services - show image after 1 second regardless
-      setTimeout(() => {
-        if (!avatarLoaded) {
-          console.log('Avatar loading timeout, showing image to improve UX')
-          setAvatarLoaded(true)
-        }
-      }, 1000)
     }
 
-    // Cleanup function
-    return () => {
-      if (document.head.contains(preloadLink)) {
-        document.head.removeChild(preloadLink)
-      }
-    }
-  }, [profile?.id, user?.id, stableAvatarUrl, profile?.avatar_url, user?.avatar_url, avatarLoaded, isUploading])
+    loadAvatar()
+  }, [profile?.id, user?.id, stableAvatarUrl, profile?.avatar_url, user?.avatar_url, isUploading, getCachedAvatar, cacheAvatar, avatarLoaded])
 
   // Reset avatar loading state when avatar URL changes
   useEffect(() => {
     setAvatarLoaded(false)
+    setCachedAvatarUrl(null) // Clear cached URL when avatar changes
   }, [profile?.avatar_url, user?.avatar_url, stableAvatarUrl])
 
   const handleAvatarUpload = async (file: File) => {
@@ -184,6 +192,21 @@ export default function ActorDashboard() {
       // Optimistic preview
       const preview = URL.createObjectURL(file)
       setLocalAvatar(preview)
+      
+      // Immediately cache the uploaded file for instant display
+      const userId = String(user?.id || '')
+      if (userId) {
+        try {
+          const cachedUrl = await cacheAvatarFromBlob(userId, file, preview, 'full')
+          if (cachedUrl) {
+            setCachedAvatarUrl(cachedUrl)
+            setAvatarLoaded(true)
+            console.log('Uploaded image cached immediately for instant display')
+          }
+        } catch (error) {
+          console.warn('Failed to cache uploaded image:', error)
+        }
+      }
       
       const form = new FormData()
       form.append('file', file)
@@ -235,6 +258,17 @@ export default function ActorDashboard() {
       // Force update with cache-busted URL
       setStableAvatarUrl(safeAvatar)
       setUploadProgress('Upload complete!')
+      
+      // Cache the final server URL for future instant loading
+      try {
+        const finalCachedUrl = await cacheAvatar(String(user?.id || ''), safeAvatar, 'full')
+        if (finalCachedUrl) {
+          setCachedAvatarUrl(finalCachedUrl)
+          console.log('Final avatar URL cached for future instant loading')
+        }
+      } catch (error) {
+        console.warn('Failed to cache final avatar URL:', error)
+      }
       
       // Force browser to fetch and cache the new image
       const img = new Image()
@@ -487,6 +521,7 @@ export default function ActorDashboard() {
                       alt={profile.name}
                       src={
                         localAvatar ||
+                        cachedAvatarUrl ||
                         stableAvatarUrl ||
                         profile.avatar_url ||
                         user?.avatar_url ||
