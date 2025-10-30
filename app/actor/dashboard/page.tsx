@@ -88,6 +88,7 @@ export default function ActorDashboard() {
   const [localAvatar, setLocalAvatar] = React.useState<string | null>(null)
   const [isUploading, setIsUploading] = React.useState(false)
   const [uploadProgress, setUploadProgress] = React.useState<string>('')
+  const [avatarLoaded, setAvatarLoaded] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [hideCompletion, setHideCompletion] = React.useState<boolean>(false)
 
@@ -336,9 +337,14 @@ export default function ActorDashboard() {
   
   return (
     <AppLayout>
-      {/* Preload the avatar so it starts fetching as early as possible */}
+      {/* Preload avatars to start fetching as early as possible */}
       <Head>
         <link rel="preload" as="image" href={safeAvatarHref} fetchPriority="high" />
+        {stableAvatarUrl && stableAvatarUrl !== safeAvatarHref && (
+          <link rel="preload" as="image" href={stableAvatarUrl} fetchPriority="high" />
+        )}
+        {/* Preload tiles endpoint to speed up discovery */}
+        <link rel="prefetch" href={`/api/media/actor/${encodeURIComponent(String(user?.id || ''))}/headshots/tiles`} />
       </Head>
       <PageHeader
         title={`Welcome back, ${user.name}!`}
@@ -416,8 +422,10 @@ export default function ActorDashboard() {
                 {/* Profile Photo */}
                 <div className="flex-shrink-0 relative">
                   <div className="h-32 w-32 md:h-40 md:w-40 rounded-full overflow-hidden bg-gray-100 relative">
+                    {/* Loading skeleton behind image */}
+                    <div className={`absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 transition-opacity duration-300 ${avatarLoaded ? 'opacity-0' : 'opacity-100 animate-pulse'}`} />
                     <img
-                      className={`h-full w-full object-cover ${isUploading ? 'opacity-50' : ''}`}
+                      className={`relative z-10 h-full w-full object-cover transition-opacity duration-300 ${avatarLoaded ? 'opacity-100' : 'opacity-0'} ${isUploading ? 'opacity-50' : ''}`}
                       alt={profile.name}
                       src={
                         localAvatar ||
@@ -426,6 +434,20 @@ export default function ActorDashboard() {
                         user?.avatar_url ||
                         safeAvatarHref
                       }
+                      loading="eager"
+                      fetchPriority="high"
+                      decoding="async"
+                      onLoad={() => {
+                        setAvatarLoaded(true);
+                        console.log('Avatar loaded successfully');
+                      }}
+                      onError={(e) => {
+                        console.error('Avatar failed to load, falling back');
+                        // Fallback to safe endpoint if current fails
+                        if (e.currentTarget.src !== safeAvatarHref) {
+                          e.currentTarget.src = safeAvatarHref;
+                        }
+                      }}
                     />
                     {/* Upload overlay */}
                     {isUploading && (

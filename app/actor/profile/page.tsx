@@ -106,6 +106,33 @@ export default function ActorProfile() {
   // Fetch light profile first, then media separately for perceived speed
   const { profile: actorData, loading, error, refresh: refreshProfile } = useActorProfile(user?.id)
   const { media, loading: mediaLoading, reload: reloadMedia } = useActorMedia(user?.id)
+
+  // Add preload hints for faster avatar loading
+  useEffect(() => {
+    const userId = String(actorData?.id || user?.id || '')
+    if (!userId) return
+
+    // Create preload link for avatar API endpoint
+    const avatarApiUrl = `/api/media/avatar/safe/${encodeURIComponent(userId)}`
+    const preloadLink = document.createElement('link')
+    preloadLink.rel = 'preload'
+    preloadLink.href = avatarApiUrl
+    preloadLink.as = 'image'
+    preloadLink.setAttribute('fetchpriority', 'high')
+    document.head.appendChild(preloadLink)
+
+    // Cleanup function
+    return () => {
+      if (document.head.contains(preloadLink)) {
+        document.head.removeChild(preloadLink)
+      }
+    }
+  }, [actorData?.id, user?.id])
+
+  // Reset avatar loading state when the avatar URL changes
+  useEffect(() => {
+    setProfileAvatarLoaded(false)
+  }, [actorData?.avatar_url, headshotTiles])
   
   const deleteMediaFile = async (fileId: string) => {
     if (!user?.id || !token || !fileId) return
@@ -149,6 +176,7 @@ export default function ActorProfile() {
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null)
   const [fastHeadshotTiles, setFastHeadshotTiles] = useState<Array<{ thumbSrc: string; fullSrc: string; alt: string }>>([])
   const [fastGalleryTiles, setFastGalleryTiles] = useState<Array<{ thumbSrc: string; fullSrc: string; alt: string }>>([])
+  const [profileAvatarLoaded, setProfileAvatarLoaded] = useState(false)
 
   // Fast path: prefetch public small headshot tiles via lightweight API
   const fetchHeadshotTiles = useCallback(async (id: string) => {
@@ -667,7 +695,11 @@ export default function ActorProfile() {
               <div className="flex flex-col md:flex-row gap-6">
                 {/* Profile Photo */}
                 <div className="flex flex-col items-center">
-                  <div className="h-32 w-32 md:h-48 md:w-48 rounded-full overflow-hidden bg-gray-100">
+                  <div className="h-32 w-32 md:h-48 md:w-48 rounded-full overflow-hidden bg-gray-100 relative">
+                    {/* Loading skeleton */}
+                    {!profileAvatarLoaded && (
+                      <div className="absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 animate-pulse" />
+                    )}
                     <img
                       src={
                         // Owner: prefer small public tile (edge cached), then server avatar_url (if not raw), then safe fallback
@@ -700,7 +732,21 @@ export default function ActorProfile() {
                         })()
                       }
                       alt={actorData?.name || ''}
-                      className="h-full w-full object-cover"
+                      className={`relative z-10 h-full w-full object-cover transition-opacity duration-300 ${profileAvatarLoaded ? 'opacity-100' : 'opacity-0'}`}
+                      loading="eager"
+                      fetchPriority="high"
+                      decoding="async"
+                      onLoad={() => {
+                        setProfileAvatarLoaded(true);
+                        console.log('Profile avatar loaded successfully');
+                      }}
+                      onError={(e) => {
+                        console.error('Profile avatar failed to load, falling back');
+                        const fallbackUrl = `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`;
+                        if (e.currentTarget.src !== fallbackUrl) {
+                          e.currentTarget.src = fallbackUrl;
+                        }
+                      }}
                     />
                   </div>
                   {isEditing && (
