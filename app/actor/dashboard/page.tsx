@@ -98,6 +98,64 @@ export default function ActorDashboard() {
     }
   }, [profile?.preferences?.hideProfileCompletion])
 
+  // Aggressive preloading strategy for faster avatar loading
+  useEffect(() => {
+    const userId = String(profile?.id || user?.id || '')
+    if (!userId) return
+
+    // Preload avatar endpoint with high priority
+    const avatarApiUrl = `/api/media/avatar/safe/${encodeURIComponent(userId)}`
+    const preloadLink = document.createElement('link')
+    preloadLink.rel = 'preload'
+    preloadLink.href = avatarApiUrl
+    preloadLink.as = 'image'
+    preloadLink.setAttribute('fetchpriority', 'high')
+    preloadLink.crossOrigin = 'anonymous'
+    document.head.appendChild(preloadLink)
+
+    // Also preload the image directly using Image() for immediate caching
+    const avatarImg = new Image()
+    avatarImg.crossOrigin = 'anonymous'
+    const currentAvatarUrl = stableAvatarUrl || profile?.avatar_url || user?.avatar_url || avatarApiUrl
+    
+    // Only preload if not already loaded and not currently uploading
+    if (!avatarLoaded && !isUploading) {
+      avatarImg.src = currentAvatarUrl
+      avatarImg.onload = () => {
+        console.log('Preloaded avatar successfully:', currentAvatarUrl.substring(0, 60) + '...')
+        setAvatarLoaded(true) // Mark as loaded when preload completes
+      }
+      avatarImg.onerror = () => {
+        console.warn('Avatar preload failed, will try again on image render')
+        // For external services like ui-avatars, still mark as "loaded" to show content
+        if (currentAvatarUrl.includes('ui-avatars.com')) {
+          console.log('External avatar service detected, showing immediately')
+          setAvatarLoaded(true)
+        }
+      }
+      
+      // Timeout for slow external services - show image after 1 second regardless
+      setTimeout(() => {
+        if (!avatarLoaded) {
+          console.log('Avatar loading timeout, showing image to improve UX')
+          setAvatarLoaded(true)
+        }
+      }, 1000)
+    }
+
+    // Cleanup function
+    return () => {
+      if (document.head.contains(preloadLink)) {
+        document.head.removeChild(preloadLink)
+      }
+    }
+  }, [profile?.id, user?.id, stableAvatarUrl, profile?.avatar_url, user?.avatar_url, avatarLoaded, isUploading])
+
+  // Reset avatar loading state when avatar URL changes
+  useEffect(() => {
+    setAvatarLoaded(false)
+  }, [profile?.avatar_url, user?.avatar_url, stableAvatarUrl])
+
   const handleAvatarUpload = async (file: File) => {
     // Validate file size (max 10MB)
     const maxSize = 10 * 1024 * 1024 // 10MB
