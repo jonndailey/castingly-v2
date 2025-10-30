@@ -37,7 +37,12 @@ function pickTiles(files: Array<{ name?: string; path?: string }>, actorId: stri
   const b = baseUrl()
   if (!b) return []
   const groups = new Map<string, { small?: string; medium?: string; large?: string; thumbnail?: string; original?: string; baseName: string; path: string }>()
-  const serve = (userId: string, folderPath: string, name: string) => `${b}/api/serve/files/${encodeURIComponent(String(userId))}/castingly-public/${folderPath ? `${folderPath.replace(/^\/+|\/+$/g, '')}/` : ''}${encodeURIComponent(name)}`
+  // Always use the correct headshots path structure
+  const serve = (userId: string, folderPath: string, name: string) => {
+    // For headshots, always use actors/[userId]/headshots path
+    const correctPath = `actors/${userId}/headshots`
+    return `${b}/api/serve/files/${encodeURIComponent(String(userId))}/castingly-public/${correctPath}/${encodeURIComponent(name)}`
+  }
   const junk = /^(android-launchericon|maskable-icon|icon-\d+x\d+|app-logo|test[-_]?)/i
   for (const f of files) {
     const name = String(f?.name || '')
@@ -83,7 +88,35 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ actorId: s
     let tiles: Tile[] = []
     try {
       const listed: any = await listActorFiles(String(actorId), { limit: 400, metadata: { category: 'headshot' } })
-      const files = Array.isArray(listed?.files) ? listed.files : []
+      let files = Array.isArray(listed?.files) ? listed.files : []
+      
+      // CRITICAL: Filter files to only those that actually belong to this actor
+      // DMAPI might return files from other users, so we must validate
+      const validFiles = files.filter((f: any) => {
+        // Check if the file's metadata or URL indicates it belongs to this actor
+        const meta = f.metadata || {}
+        const sourceId = meta.sourceActorId || meta.source_actor_id || meta.userId || meta.user_id
+        
+        // If we have a sourceActorId, it must match
+        if (sourceId && String(sourceId) !== String(actorId)) {
+          console.log('[tiles/headshots] Filtering out file from wrong actor:', sourceId, '!=', actorId)
+          return false
+        }
+        
+        // Also check if the URL contains the wrong actor ID (947d2a5c pattern)
+        const urlStr = String(f.url || f.thumbnail_url || f.public_url || '')
+        if (urlStr && urlStr.includes('947d2a5c') && actorId !== '947d2a5c-aedc-11f0-95c0-fa163e24cb3c') {
+          console.log('[tiles/headshots] Filtering out file with wrong actor in URL')
+          return false
+        }
+        
+        return true
+      })
+      
+      console.log('[tiles/headshots] Filtered', files.length, 'files to', validFiles.length, 'for actor', actorId)
+      files = validFiles
+      
+      // Process validated files
       const mapped: Tile[] = []
       const b = baseUrl() || 'https://media.dailey.cloud'
       for (const f of files) {
@@ -97,10 +130,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ actorId: s
         let serveFull: string | null = null
         if (b && origName) {
           // Always try to construct /api/serve URL for public assets
+          // IMPORTANT: Always use the correct path structure for headshots
           const effectiveBucket = bucketId || 'castingly-public'
-          const tail = folderPathRaw ? `${String(folderPathRaw).replace(/^\/+|\/+$/g, '')}/` : ''
+          // For headshots, the path MUST be actors/[actorId]/headshots/
+          const properPath = `actors/${String(actorId)}/headshots/`
           // Prefer /api/serve (edge cached) for public assets
-          const serveUrl = `${b}/api/serve/files/${encodeURIComponent(String(actorId))}/${effectiveBucket}/${tail}${encodeURIComponent(origName)}`
+          const serveUrl = `${b}/api/serve/files/${encodeURIComponent(String(actorId))}/${effectiveBucket}/${properPath}${encodeURIComponent(origName)}`
           serveThumb = serveUrl
           serveFull = serveUrl
         }
@@ -110,20 +145,20 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ actorId: s
         const synthServe = (u?: string | null) => {
           try {
             if (!u) return null
-            const m = u.match(/\/files\/[^/]+\/(castingly-[^/]+\/.+)$/)
-            if (!m || !b) return null
-            const tail = m[1]
-            return `${b}/api/serve/files/${encodeURIComponent(String(actorId))}/${tail}`
+            // Extract just the filename from the URL
+            const filename = u.split('/').pop()
+            if (!filename || !b) return null
+            // Always use proper headshot path structure
+            return `${b}/api/serve/files/${encodeURIComponent(String(actorId))}/castingly-public/actors/${String(actorId)}/headshots/${encodeURIComponent(filename)}`
           } catch { return null }
         }
+        // Synthesize serve URLs if needed
         if (!serveThumb) serveThumb = synthServe(rawThumb)
         if (!serveFull) serveFull = synthServe(rawFull)
+        
         const isRawHost = (u?: string | null) => {
           try { if (!u) return false; const h = new URL(u).host; return /(^|\.)s3\.|amazonaws\.com|\.ovh\./i.test(h) } catch { return false }
         }
-        // Always prefer serve URLs, synthesize if possible, never use raw storage
-        if (!serveThumb && rawThumb) serveThumb = synthServe(rawThumb)
-        if (!serveFull && rawFull) serveFull = synthServe(rawFull)
         const thumb = serveThumb || (rawThumb && !isRawHost(rawThumb) ? rawThumb : null)
         const full = serveFull || (rawFull && !isRawHost(rawFull) ? rawFull : null)
         // Only add tiles with both thumb and full URLs, and neither can be raw storage
