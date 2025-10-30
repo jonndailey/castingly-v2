@@ -98,17 +98,24 @@ export default function ActorDashboard() {
   }, [profile?.preferences?.hideProfileCompletion])
 
   const handleAvatarUpload = async (file: File) => {
-    // Add upload timeout of 30 seconds
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024 // 10MB
+    if (file.size > maxSize) {
+      alert(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Please choose an image under 10MB.`)
+      return
+    }
+    
+    // Add upload timeout of 60 seconds for larger files
     const uploadTimeout = setTimeout(() => {
       setIsUploading(false)
       setUploadProgress('')
       setLocalAvatar(null)
       alert('Upload timed out. Please try again with a smaller image or check your connection.')
-    }, 30000)
+    }, 60000)
     
     try {
       if (!user?.id || !token) return
-      const actorIdForPatch = profile?.id
+      const actorIdForPatch = profile?.id || user.id
       if (!actorIdForPatch) return
       
       // Start upload state
@@ -123,6 +130,14 @@ export default function ActorDashboard() {
       form.append('file', file)
       form.append('title', file.name)
       form.append('category', 'headshot')
+      
+      console.log('Starting upload:', {
+        fileName: file.name,
+        fileSize: `${(file.size / 1024).toFixed(1)}KB`,
+        fileType: file.type,
+        userId: user.id,
+        actorId: actorIdForPatch
+      })
       
       setUploadProgress('Uploading image...')
       const res = await fetch(`/api/media/actor/${encodeURIComponent(String(user.id))}/upload`, {
