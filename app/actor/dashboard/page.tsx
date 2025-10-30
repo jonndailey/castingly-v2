@@ -177,12 +177,27 @@ export default function ActorDashboard() {
       setStableAvatarUrl(safeAvatar)
       setUploadProgress('Upload complete!')
       
-      // Force browser to fetch fresh image
+      // Force browser to fetch and cache the new image
       const img = new Image()
+      img.onload = () => {
+        console.log('New avatar loaded successfully')
+        // Update again with the fresh URL
+        setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}?v=${Date.now()}`)
+      }
+      img.onerror = () => {
+        console.error('Failed to load new avatar')
+      }
       img.src = safeAvatar
       
       // Clear timeout on success
       clearTimeout(uploadTimeout)
+      
+      // Immediately refresh the profile to get new data
+      try { 
+        await refreshProfile()
+      } catch (e) {
+        console.error('Profile refresh failed:', e)
+      }
       
       // Clear upload state after brief success message
       setTimeout(() => {
@@ -191,13 +206,9 @@ export default function ActorDashboard() {
         // Clean up preview
         URL.revokeObjectURL(preview)
         setLocalAvatar(null)
-        // Update to non-timestamped URL after cache is fresh
-        setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}`)
+        // Keep the timestamped URL to ensure fresh image
+        setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}?t=${Date.now()}`)
       }, 2000)
-      
-      try { 
-        refreshProfile()
-      } catch {}
     } catch (e) {
       // Clear timeout on error
       clearTimeout(uploadTimeout)
@@ -241,10 +252,11 @@ export default function ActorDashboard() {
     const id = String(user.id)
     let aborted = false
     
-    // Set initial avatar immediately from safe endpoint
+    // Set initial avatar immediately from safe endpoint with cache buster
     if (!stableAvatarUrl && !localAvatar) {
       // The safe avatar endpoint will return the actual image or redirect to a proper fallback
-      setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(id)}`)
+      // Add cache buster to ensure we get the latest image
+      setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(id)}?init=${Date.now()}`)
     }
     
     // Skip tile fetching if we're uploading or have a local preview
