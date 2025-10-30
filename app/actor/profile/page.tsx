@@ -92,9 +92,19 @@ const profileData = {
   }
 }
 
-const archetypesList = [
-  'Hero', 'Innocent', 'Explorer', 'Sage', 'Rebel', 'Lover',
-  'Creator', 'Jester', 'Caregiver', 'Ruler', 'Magician', 'Regular Guy'
+const archetypesDefinitions = [
+  { name: 'Hero', emoji: '🦸', description: 'Brave, determined, and driven to overcome challenges.' },
+  { name: 'Innocent', emoji: '👶', description: 'Pure-hearted, optimistic, and full of wonder.' },
+  { name: 'Explorer', emoji: '🧭', description: 'Adventurous, curious, and drawn to new experiences.' },
+  { name: 'Sage', emoji: '🧙', description: 'Wise, thoughtful, and a seeker of truth and understanding.' },
+  { name: 'Rebel', emoji: '😈', description: 'Bold, unconventional, and unafraid to challenge authority.' },
+  { name: 'Lover', emoji: '💕', description: 'Passionate, expressive, and guided by emotion and connection.' },
+  { name: 'Creator', emoji: '🎨', description: 'Visionary, imaginative, and driven to build or express.' },
+  { name: 'Jester', emoji: '🃏', description: 'Playful, witty, and able to bring levity and truth through humor.' },
+  { name: 'Caregiver', emoji: '🤱', description: 'Compassionate, nurturing, and selfless in service to others.' },
+  { name: 'Ruler', emoji: '👑', description: 'Confident, commanding, and natural at leading or taking charge.' },
+  { name: 'Magician', emoji: '🔮', description: 'Charismatic, insightful, and able to transform situations or people.' },
+  { name: 'Regular Guy/Girl', emoji: '👔', description: 'Relatable, grounded, and authentically human.' }
 ]
 
 export default function ActorProfile() {
@@ -119,11 +129,13 @@ export default function ActorProfile() {
     }
   }
   const [isEditing, setIsEditing] = useState(false)
-  const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string; age_range?: string; forum_display_name?: string; forum_signature?: string }>({})
+  const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string; age_range?: string; forum_display_name?: string; forum_signature?: string; archetypes?: string[]; training?: Array<{institution: string; year: string; focus: string}> }>({})
   const [saveMessage, setSaveMessage] = useState<string>('')
   const [skillsInput, setSkillsInput] = useState('')
   const [pendingSkills, setPendingSkills] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState('overview')
+  const [selectedArchetypes, setSelectedArchetypes] = useState<string[]>([])
+  const [trainingEntries, setTrainingEntries] = useState<Array<{institution: string; year: string; focus: string}>>([])
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string; index: number } | null>(null)
   const [imageGallery, setImageGallery] = useState<Array<{ src: string; alt: string }>>([])
   const [uploading, setUploading] = useState(false)
@@ -245,6 +257,16 @@ export default function ActorProfile() {
     ? fastHeadshotTiles as any
     : headshotTilesFromMedia
   const headshotTiles: VariantTile[] = headshotTilesAll.slice(0, 20)
+  
+  // Initialize archetypes and training when actor data loads
+  useEffect(() => {
+    if ((actorData as any)?.archetypes) {
+      setSelectedArchetypes((actorData as any).archetypes)
+    }
+    if ((actorData as any)?.training) {
+      setTrainingEntries((actorData as any).training)
+    }
+  }, [actorData])
   
   const openImageModal = useCallback((src: string, alt: string, gallery: Array<{ src: string; alt: string }>, index: number) => {
     setImageGallery(gallery)
@@ -600,25 +622,25 @@ export default function ActorProfile() {
               <div className="flex flex-col md:flex-row gap-6">
                 {/* Profile Photo */}
                 <div className="flex flex-col items-center">
-                  <Avatar
-                    src={
-                      // Owner: prefer small public tile (edge cached), then server avatar_url (if not raw), then safe fallback
-                      (() => {
-                        const isRawUrl = (url: string | null | undefined) => {
-                          if (!url) return false
-                          return /(s3\.|amazonaws\.com|\.ovh\.)/i.test(url)
-                        }
-                        const avatarUrl = actorData?.avatar_url
-                        const safeAvatarUrl = (avatarUrl && !isRawUrl(avatarUrl)) ? avatarUrl : null
-                        const fallbackUrl = `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`
-                        return headshotTiles?.[0]?.thumbSrc || safeAvatarUrl || fallbackUrl
-                      })()
-                    }
-                    alt={actorData?.name || ''}
-                    fallback={actorData?.name || ''}
-                    size="xl"
-                    className="h-32 w-32"
-                  />
+                  <div className="h-32 w-32 md:h-48 md:w-48 rounded-full overflow-hidden bg-gray-100">
+                    <img
+                      src={
+                        // Owner: prefer small public tile (edge cached), then server avatar_url (if not raw), then safe fallback
+                        (() => {
+                          const isRawUrl = (url: string | null | undefined) => {
+                            if (!url) return false
+                            return /(s3\.|amazonaws\.com|\.ovh\.)/i.test(url)
+                          }
+                          const avatarUrl = actorData?.avatar_url
+                          const safeAvatarUrl = (avatarUrl && !isRawUrl(avatarUrl)) ? avatarUrl : null
+                          const fallbackUrl = `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`
+                          return headshotTiles?.[0]?.thumbSrc || safeAvatarUrl || fallbackUrl
+                        })()
+                      }
+                      alt={actorData?.name || ''}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
                   {isEditing && (
                     <Button size="sm" variant="outline" className="mt-3">
                       <Camera className="w-4 h-4 mr-2" />
@@ -1379,12 +1401,77 @@ export default function ActorProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <p className="text-gray-600">Training details will be added in a future update.</p>
+                    {/* Training list */}
+                    {trainingEntries && trainingEntries.length > 0 ? (
+                      <div className="space-y-3">
+                        {trainingEntries.map((entry, index) => (
+                          <div key={index} className="bg-gray-50 rounded-lg p-4 relative">
+                            <div className="pr-8">
+                              <h4 className="font-medium text-sm">{entry.institution}</h4>
+                              <p className="text-sm text-gray-600">{entry.focus}</p>
+                              <p className="text-xs text-gray-500 mt-1">{entry.year}</p>
+                            </div>
+                            {isEditing && (
+                              <button
+                                onClick={() => {
+                                  setTrainingEntries(prev => prev.filter((_, i) => i !== index))
+                                }}
+                                className="absolute top-4 right-4 text-red-500 hover:text-red-700"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 text-sm">No training entries added yet.</p>
+                    )}
+                    
+                    {/* Add training form */}
                     {isEditing && (
-                      <Button variant="outline" fullWidth>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Training
-                      </Button>
+                      <div className="border-t pt-4">
+                        <h4 className="text-sm font-medium mb-3">Add Training</h4>
+                        <div className="space-y-3">
+                          <Input
+                            placeholder="Institution (e.g., Lee Strasberg Theatre & Film Institute)"
+                            className="text-sm"
+                            id="training-institution"
+                          />
+                          <div className="grid grid-cols-2 gap-3">
+                            <Input
+                              placeholder="Year (e.g., 2020)"
+                              className="text-sm"
+                              id="training-year"
+                            />
+                            <Input
+                              placeholder="Focus (e.g., Method Acting)"
+                              className="text-sm"
+                              id="training-focus"
+                            />
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const institution = (document.getElementById('training-institution') as HTMLInputElement)?.value
+                              const year = (document.getElementById('training-year') as HTMLInputElement)?.value
+                              const focus = (document.getElementById('training-focus') as HTMLInputElement)?.value
+                              
+                              if (institution && year && focus) {
+                                setTrainingEntries(prev => [...prev, { institution, year, focus }])
+                                // Clear inputs
+                                ;(document.getElementById('training-institution') as HTMLInputElement).value = ''
+                                ;(document.getElementById('training-year') as HTMLInputElement).value = ''
+                                ;(document.getElementById('training-focus') as HTMLInputElement).value = ''
+                              }
+                            }}
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Entry
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </CardContent>
@@ -1407,50 +1494,59 @@ export default function ActorProfile() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {archetypesList.map((archetype) => {
-                      const isSelected = false
+                  {/* Introduction text */}
+                  <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                    <p className="text-sm text-gray-700 leading-relaxed">
+                      Archetypes represent timeless character patterns that appear across stories, cultures, and performances. 
+                      They reflect universal human motivations — from the drive to explore, to the desire to nurture, to the need to lead.
+                    </p>
+                    <p className="text-sm text-gray-600 mt-2">
+                      Select up to three archetypes that best define your casting type. These help casting professionals quickly understand your natural screen or stage presence.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {archetypesDefinitions.map((archetype) => {
+                      const isSelected = selectedArchetypes.includes(archetype.name)
                       return (
                         <button
-                          key={archetype}
+                          key={archetype.name}
                           onClick={() => {
                             if (!isEditing) return
                             if (isSelected) {
-                              // TODO: Implement archetype editing
-                            } else {
-                              // TODO: Implement archetype editing
+                              setSelectedArchetypes(prev => prev.filter(a => a !== archetype.name))
+                            } else if (selectedArchetypes.length < 3) {
+                              setSelectedArchetypes(prev => [...prev, archetype.name])
                             }
                           }}
-                          disabled={!isEditing}
+                          disabled={!isEditing || (!isSelected && selectedArchetypes.length >= 3)}
                           className={cn(
-                            'p-4 rounded-lg border-2 transition-all',
+                            'p-3 rounded-lg border-2 transition-all text-left',
                             isSelected
-                              ? 'border-primary-500 bg-primary-50 text-primary-700'
+                              ? 'border-primary-500 bg-primary-50'
                               : 'border-gray-200 hover:border-gray-300',
-                            !isEditing && 'cursor-default'
+                            !isEditing && 'cursor-default',
+                            !isSelected && selectedArchetypes.length >= 3 && isEditing && 'opacity-50 cursor-not-allowed'
                           )}
                         >
-                          <div className="text-2xl mb-2">
-                            {archetype === 'Hero' && '🦸'}
-                            {archetype === 'Innocent' && '👶'}
-                            {archetype === 'Explorer' && '🧭'}
-                            {archetype === 'Sage' && '🧙'}
-                            {archetype === 'Rebel' && '😈'}
-                            {archetype === 'Lover' && '💕'}
-                            {archetype === 'Creator' && '🎨'}
-                            {archetype === 'Jester' && '🃏'}
-                            {archetype === 'Caregiver' && '🤱'}
-                            {archetype === 'Ruler' && '👑'}
-                            {archetype === 'Magician' && '🔮'}
-                            {archetype === 'Regular Guy' && '👔'}
+                          <div className="flex items-start gap-3">
+                            <div className="text-2xl flex-shrink-0">{archetype.emoji}</div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm mb-1">{archetype.name}</p>
+                              <p className="text-xs text-gray-600 line-clamp-2">{archetype.description}</p>
+                            </div>
                           </div>
-                          <p className="font-medium">{archetype}</p>
+                          {isSelected && (
+                            <div className="absolute top-2 right-2">
+                              <Check className="w-4 h-4 text-primary-600" />
+                            </div>
+                          )}
                         </button>
                       )
                     })}
                   </div>
                   <p className="text-sm text-gray-500 mt-4">
-                    Selected: 0/3
+                    Selected: {selectedArchetypes.length}/3 archetypes
                   </p>
                 </CardContent>
               </Card>

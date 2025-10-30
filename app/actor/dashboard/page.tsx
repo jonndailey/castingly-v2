@@ -274,95 +274,123 @@ export default function ActorDashboard() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-6"
         >
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="w-5 h-5" />
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <User className="w-4 h-4" />
                 Your Profile Overview
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-col md:flex-row gap-6">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row gap-4">
                 {/* Profile Photo */}
                 <div className="flex-shrink-0">
-                  <ProfileAvatar
-                    editable
-                    size="xl"
-                    alt={profile.name}
-                    // Prefer API-provided avatar_url (DMAPI /api/serve) for stable cached loads; then user avatar; fallback to safe proxy.
-                    src={
-                      (localAvatar || undefined) ||
-                      (fastHeadshotTiles[0]?.thumb || undefined) ||
-                      (profile.avatar_url || undefined) ||
-                      (user?.avatar_url || undefined) ||
-                      safeAvatarHref
-                    }
-                    fallback={profile.name}
-                    onUpload={handleAvatarUpload}
-                  />
+                  <div className="h-32 w-32 md:h-40 md:w-40 rounded-full overflow-hidden bg-gray-100 relative">
+                    <img
+                      className="h-full w-full object-cover"
+                      alt={profile.name}
+                      src={
+                        localAvatar ||
+                        fastHeadshotTiles[0]?.thumb ||
+                        profile.avatar_url ||
+                        user?.avatar_url ||
+                        safeAvatarHref ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&size=160&background=9C27B0&color=fff`
+                      }
+                    />
+                    {/* Upload button */}
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="absolute bottom-0 right-0 p-2 bg-white rounded-full shadow-md hover:bg-gray-50"
+                    >
+                      <Camera className="w-4 h-4 text-gray-600" />
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleAvatarUpload(file)
+                      }}
+                    />
+                  </div>
                 </div>
                 
                 {/* Profile Info */}
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                    {profile.name}
-                  </h3>
+                <div className="flex-1 min-w-0 space-y-3">
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
+                      {profile.name}
+                    </h3>
+                    {profile.bio && (
+                      <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                        {profile.bio}
+                      </p>
+                    )}
+                  </div>
                   
-                  {profile.bio && (
-                    <p className="text-gray-600 mb-4 leading-relaxed">
-                      {profile.bio}
-                    </p>
-                  )}
-                  
-                  {/* Skills */}
-                  {profile.skills && profile.skills.length > 0 && (
-                    <div className="mb-4">
-                      <h4 className="text-sm font-medium text-gray-700 mb-2">Skills & Specialties</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {profile.skills.slice(0, 6).map((skill, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs">
-                            {skill}
-                          </Badge>
-                        ))}
-                        {profile.skills.length > 6 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{profile.skills.length - 6} more
-                          </Badge>
-                        )}
-                      </div>
+                  {/* Two column grid for info */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Physical Attributes */}
+                    <div className="space-y-2">
+                      {(profile.height || profile.eye_color || profile.hair_color) && (
+                        <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                          <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Physical</h4>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            {profile.height && (
+                              <div>
+                                <span className="text-gray-500 block">Height</span>
+                                <p className="font-medium text-gray-900">{profile.height}</p>
+                              </div>
+                            )}
+                            {profile.eye_color && (
+                              <div>
+                                <span className="text-gray-500 block">Eyes</span>
+                                <p className="font-medium text-gray-900">{profile.eye_color}</p>
+                              </div>
+                            )}
+                            {profile.hair_color && (
+                              <div>
+                                <span className="text-gray-500 block">Hair</span>
+                                <p className="font-medium text-gray-900">{profile.hair_color}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  
-                  {/* Physical Stats */}
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    {profile.height && (
-                      <div>
-                        <span className="text-gray-500">Height:</span>
-                        <p className="font-medium">{profile.height}</p>
-                      </div>
-                    )}
-                    {profile.eye_color && (
-                      <div>
-                        <span className="text-gray-500">Eyes:</span>
-                        <p className="font-medium">{profile.eye_color}</p>
-                      </div>
-                    )}
-                    {profile.hair_color && (
-                      <div>
-                        <span className="text-gray-500">Hair:</span>
-                        <p className="font-medium">{profile.hair_color}</p>
+                    
+                    {/* Skills - Compact */}
+                    {profile.skills && profile.skills.length > 0 && (
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Top Skills</h4>
+                        <div className="flex flex-wrap gap-1">
+                          {profile.skills.slice(0, 4).map((skill, index) => (
+                            <Badge key={index} variant="secondary" className="text-[10px] px-2 py-0.5">
+                              {skill}
+                            </Badge>
+                          ))}
+                          {profile.skills.length > 4 && (
+                            <Badge variant="outline" className="text-[10px] px-2 py-0.5">
+                              +{profile.skills.length - 4}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
                   
-                  {/* Quick Actions */}
-                  <div className="flex gap-2 mt-4">
+                  {/* Quick Actions - Inline */}
+                  <div className="flex gap-2 pt-2">
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="default"
                       onClick={() => router.push('/actor/profile')}
+                      className="text-xs"
                     >
                       Edit Profile
                     </Button>
@@ -371,11 +399,21 @@ export default function ActorDashboard() {
                         size="sm"
                         variant="outline"
                         onClick={() => window.open(profile.resume_url!, '_blank')}
+                        className="text-xs"
                       >
-                        <FileText className="w-4 h-4 mr-1" />
-                        View Resume
+                        <FileText className="w-3 h-3 mr-1" />
+                        Resume
                       </Button>
                     )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => router.push('/actor/media')}
+                      className="text-xs"
+                    >
+                      <Camera className="w-3 h-3 mr-1" />
+                      Media
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -384,25 +422,25 @@ export default function ActorDashboard() {
         </motion.div>
         
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
             <Card>
-              <CardContent className="p-4">
+              <CardContent className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Profile Views</p>
-                    <p className="text-2xl font-bold">{stats.profileViews}</p>
-                    <p className="text-xs text-green-600 flex items-center mt-1">
-                      <TrendingUp className="w-3 h-3 mr-1" />
+                    <p className="text-xs text-gray-600">Profile Views</p>
+                    <p className="text-xl font-bold">{stats.profileViews}</p>
+                    <p className="text-[10px] text-green-600 flex items-center mt-0.5">
+                      <TrendingUp className="w-2.5 h-2.5 mr-0.5" />
                       +12% this week
                     </p>
                   </div>
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <Star className="w-5 h-5 text-purple-600" />
+                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <Star className="w-4 h-4 text-purple-600" />
                   </div>
                 </div>
               </CardContent>
@@ -415,15 +453,15 @@ export default function ActorDashboard() {
             transition={{ delay: 0.2 }}
           >
             <Card>
-              <CardContent className="p-4">
+              <CardContent className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Submissions</p>
-                    <p className="text-2xl font-bold">{stats.submissions}</p>
-                    <p className="text-xs text-gray-500 mt-1">This month</p>
+                    <p className="text-xs text-gray-600">Submissions</p>
+                    <p className="text-xl font-bold">{stats.submissions}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">This month</p>
                   </div>
-                  <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center">
-                    <Video className="w-5 h-5 text-teal-600" />
+                  <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
+                    <Video className="w-4 h-4 text-teal-600" />
                   </div>
                 </div>
               </CardContent>
@@ -436,15 +474,15 @@ export default function ActorDashboard() {
             transition={{ delay: 0.3 }}
           >
             <Card>
-              <CardContent className="p-4">
+              <CardContent className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Callbacks</p>
-                    <p className="text-2xl font-bold">{stats.callbacks}</p>
-                    <p className="text-xs text-gray-500 mt-1">Awaiting</p>
+                    <p className="text-xs text-gray-600">Callbacks</p>
+                    <p className="text-xl font-bold">{stats.callbacks}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Awaiting</p>
                   </div>
-                  <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <Calendar className="w-5 h-5 text-orange-600" />
+                  <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <Calendar className="w-4 h-4 text-orange-600" />
                   </div>
                 </div>
               </CardContent>
@@ -457,15 +495,15 @@ export default function ActorDashboard() {
             transition={{ delay: 0.4 }}
           >
             <Card>
-              <CardContent className="p-4">
+              <CardContent className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Bookings</p>
-                    <p className="text-2xl font-bold">{stats.bookings}</p>
-                    <p className="text-xs text-gray-500 mt-1">This year</p>
+                    <p className="text-xs text-gray-600">Bookings</p>
+                    <p className="text-xl font-bold">{stats.bookings}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">This year</p>
                   </div>
-                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 text-green-600" />
+                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
                   </div>
                 </div>
               </CardContent>

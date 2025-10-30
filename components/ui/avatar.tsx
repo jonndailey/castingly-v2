@@ -13,8 +13,10 @@ const avatarVariants = cva(
         md: 'h-10 w-10 text-base',
         lg: 'h-12 w-12 text-lg',
         xl: 'h-16 w-16 text-xl',
-        '2xl': 'h-20 w-20 text-2xl',
-        '3xl': 'h-24 w-24 text-3xl',
+        '2xl': 'h-24 w-24 text-2xl',
+        '3xl': 'h-32 w-32 text-3xl',
+        '4xl': 'h-40 w-40 text-4xl',
+        '5xl': 'h-48 w-48 text-5xl',
       },
     },
     defaultVariants: {
@@ -64,7 +66,7 @@ interface AvatarProps
 const Avatar = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Root>,
   AvatarProps
->(({ className, size, src, alt, fallback, status, ...props }, ref) => {
+>(({ className, size = 'md', src, alt, fallback, status, ...props }, ref) => {
   const statusColors = {
     online: 'bg-green-500',
     offline: 'bg-gray-400',
@@ -83,8 +85,8 @@ const Avatar = React.forwardRef<
           src={src}
           alt={alt}
           // Elevate priority for larger avatars to improve perceived speed
-          fetchPriority={size === 'xl' || size === '2xl' || size === '3xl' ? 'high' : 'auto'}
-          loading={size === 'xl' || size === '2xl' || size === '3xl' ? 'eager' : 'lazy'}
+          fetchPriority={size === 'xl' || size === '2xl' || size === '3xl' || size === '4xl' || size === '5xl' ? 'high' : 'auto'}
+          loading={size === 'xl' || size === '2xl' || size === '3xl' || size === '4xl' || size === '5xl' ? 'eager' : 'lazy'}
           decoding="async"
         />
         <AvatarFallback>
@@ -103,7 +105,9 @@ const Avatar = React.forwardRef<
             size === 'lg' && 'h-3.5 w-3.5',
             size === 'xl' && 'h-4 w-4',
             size === '2xl' && 'h-5 w-5',
-            size === '3xl' && 'h-6 w-6'
+            size === '3xl' && 'h-6 w-6',
+            size === '4xl' && 'h-7 w-7',
+            size === '5xl' && 'h-8 w-8'
           )}
         />
       )}

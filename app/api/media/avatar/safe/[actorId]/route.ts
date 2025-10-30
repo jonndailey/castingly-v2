@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
       row = undefined
     }
     const name = (row?.name && row.name.trim().length > 0) ? row.name : String(actorId)
-    const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=9C27B0&color=fff`
+    const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&size=160&background=9C27B0&color=fff`
 
     let url: string | null = row?.avatar_url || null
     const cacheHeaders = {

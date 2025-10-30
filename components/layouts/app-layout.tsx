@@ -18,8 +18,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, className }) => 
         
         {/* Main content */}
         <main className={cn(
-          // Padding bottom for mobile nav, safe areas, prevent horizontal scroll, wrap long words
-          'flex-1 pb-24 md:pb-0 min-h-screen safe-bottom overflow-x-hidden break-words',
+          // Padding bottom for mobile nav (increased for better clearance), safe areas, prevent horizontal scroll, wrap long words
+          'flex-1 pb-32 md:pb-0 min-h-screen safe-bottom overflow-x-hidden break-words',
           className
         )}>
           {children}
