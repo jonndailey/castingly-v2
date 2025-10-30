@@ -435,7 +435,32 @@ export async function GET(
       media = null
     }
 
-    let avatarFromDmapi = (media as any)?.headshots?.[0]?.url || (media as any)?.headshots?.[0]?.thumbnail_url || (media as any)?.headshots?.[0]?.signed_url || null
+    // Get avatar from DMAPI media, but filter out raw storage URLs
+    const isRawStorageUrl = (u?: string | null) => {
+      if (!u || typeof u !== 'string') return false
+      try {
+        const host = new URL(u).host
+        return /(^|\.)s3\.|amazonaws\.com|\.ovh\./i.test(host)
+      } catch { return false }
+    }
+    
+    // Try to get a clean avatar URL from headshots
+    let avatarFromDmapi = null
+    const firstHeadshot = (media as any)?.headshots?.[0]
+    if (firstHeadshot) {
+      // Prefer non-raw URLs in order: thumbnail_url, signed_url, url
+      const candidates = [
+        firstHeadshot.thumbnail_url,
+        firstHeadshot.signed_url,
+        firstHeadshot.url
+      ]
+      for (const url of candidates) {
+        if (url && !isRawStorageUrl(url)) {
+          avatarFromDmapi = url
+          break
+        }
+      }
+    }
     // Prefer newest public small variant from castingly-public via folder listing (opt-in)
     if (!avatarFromDmapi && shouldResolveAvatar) {
       try {

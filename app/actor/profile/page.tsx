@@ -602,10 +602,17 @@ export default function ActorProfile() {
                 <div className="flex flex-col items-center">
                   <Avatar
                     src={
-                      // Owner: prefer small public tile (edge cached), then server avatar_url, then safe fallback
-                      (user?.id && actorData?.id && String(user.id) === String(actorData.id))
-                        ? (headshotTiles?.[0]?.thumbSrc || actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`)
-                        : (headshotTiles?.[0]?.thumbSrc || actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`)
+                      // Owner: prefer small public tile (edge cached), then server avatar_url (if not raw), then safe fallback
+                      (() => {
+                        const isRawUrl = (url: string | null | undefined) => {
+                          if (!url) return false
+                          return /(s3\.|amazonaws\.com|\.ovh\.)/i.test(url)
+                        }
+                        const avatarUrl = actorData?.avatar_url
+                        const safeAvatarUrl = (avatarUrl && !isRawUrl(avatarUrl)) ? avatarUrl : null
+                        const fallbackUrl = `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`
+                        return headshotTiles?.[0]?.thumbSrc || safeAvatarUrl || fallbackUrl
+                      })()
                     }
                     alt={actorData?.name || ''}
                     fallback={actorData?.name || ''}
