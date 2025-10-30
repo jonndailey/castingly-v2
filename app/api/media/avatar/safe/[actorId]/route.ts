@@ -113,7 +113,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
             }
             return new Response(await resp.arrayBuffer(), { status: 200, headers: hdrs })
           } catch {
-            return new Response(null, { status: 302, headers: { Location: direct, ...cacheHeaders } })
+            const redirectHeaders = new Headers()
+            redirectHeaders.set('Location', direct)
+            Object.entries(cacheHeaders).forEach(([key, value]) => {
+              redirectHeaders.set(key, value)
+            })
+            return new Response(null, { status: 302, headers: redirectHeaders })
           }
         }
       }
@@ -167,14 +172,24 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
             hdrs.set('Cache-Control', 'private, no-store')
             return new Response(await resp.arrayBuffer(), { status: 200, headers: hdrs })
           } catch {
-            return new Response(null, { status: 302, headers: { Location: direct, ...cacheHeaders } })
+            const redirectHeaders = new Headers()
+            redirectHeaders.set('Location', direct)
+            Object.entries(cacheHeaders).forEach(([key, value]) => {
+              redirectHeaders.set(key, value)
+            })
+            return new Response(null, { status: 302, headers: redirectHeaders })
           }
         }
       }
     } catch {}
 
     // Fallback: UI-Avatars
-    return new Response(null, { status: 302, headers: { Location: fallback, ...cacheHeaders } })
+    const fallbackHeaders = new Headers()
+    fallbackHeaders.set('Location', fallback)
+    Object.entries(cacheHeaders).forEach(([key, value]) => {
+      fallbackHeaders.set(key, value)
+    })
+    return new Response(null, { status: 302, headers: fallbackHeaders })
   } catch {
     return new Response('Avatar lookup failed', { status: 500 })
   }
