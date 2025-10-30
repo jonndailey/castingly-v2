@@ -679,7 +679,24 @@ export default function ActorProfile() {
                           const avatarUrl = actorData?.avatar_url
                           const safeAvatarUrl = (avatarUrl && !isRawUrl(avatarUrl)) ? avatarUrl : null
                           const fallbackUrl = `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`
-                          return headshotTiles?.[0]?.thumbSrc || safeAvatarUrl || fallbackUrl
+                          
+                          // Add cache buster to ensure fresh images
+                          const addCacheBuster = (url: string) => {
+                            if (url.includes('?')) {
+                              return url + '&v=' + Date.now()
+                            } else {
+                              return url + '?v=' + Date.now()
+                            }
+                          }
+                          
+                          let finalUrl = headshotTiles?.[0]?.thumbSrc || safeAvatarUrl || fallbackUrl
+                          
+                          // Only add cache buster to our API endpoints, not external services
+                          if (finalUrl.includes('/api/')) {
+                            finalUrl = addCacheBuster(finalUrl)
+                          }
+                          
+                          return finalUrl
                         })()
                       }
                       alt={actorData?.name || ''}
