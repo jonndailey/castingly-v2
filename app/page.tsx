@@ -32,9 +32,6 @@ export default function LandingPage() {
               <Link href="/features" className="text-gray-700 hover:text-primary-600 transition-colors">
                 Features
               </Link>
-              <Link href="/pricing" className="text-gray-700 hover:text-primary-600 transition-colors">
-                Pricing
-              </Link>
               <Link href="/about" className="text-gray-700 hover:text-primary-600 transition-colors">
                 About
               </Link>
@@ -77,7 +74,6 @@ export default function LandingPage() {
           <div className="md:hidden bg-white border-t border-gray-200 animate-slide-down">
             <div className="container-mobile py-4 space-y-2">
               <Link href="/features" className="block py-3 text-gray-700">Features</Link>
-              <Link href="/pricing" className="block py-3 text-gray-700">Pricing</Link>
               <Link href="/about" className="block py-3 text-gray-700">About</Link>
               {user ? (
                 <button 

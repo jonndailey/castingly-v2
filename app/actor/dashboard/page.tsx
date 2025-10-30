@@ -98,6 +98,14 @@ export default function ActorDashboard() {
   }, [profile?.preferences?.hideProfileCompletion])
 
   const handleAvatarUpload = async (file: File) => {
+    // Add upload timeout of 30 seconds
+    const uploadTimeout = setTimeout(() => {
+      setIsUploading(false)
+      setUploadProgress('')
+      setLocalAvatar(null)
+      alert('Upload timed out. Please try again with a smaller image or check your connection.')
+    }, 30000)
+    
     try {
       if (!user?.id || !token) return
       const actorIdForPatch = profile?.id
@@ -122,12 +130,20 @@ export default function ActorDashboard() {
         headers: { Authorization: `Bearer ${token}` },
         body: form,
       })
-      if (!res.ok) throw new Error('Upload failed')
+      
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => 'Unknown error')
+        console.error('Upload failed:', res.status, errorText)
+        throw new Error(`Upload failed: ${res.status} - ${errorText}`)
+      }
+      
+      const uploadResult = await res.json().catch(() => null)
+      console.log('Upload successful:', uploadResult)
       
       setUploadProgress('Saving changes...')
       // Add timestamp to force cache refresh
       const safeAvatar = `/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}?t=${Date.now()}`
-      await fetch(`/api/actors/${encodeURIComponent(String(actorIdForPatch))}/profile`, {
+      const profileRes = await fetch(`/api/actors/${encodeURIComponent(String(actorIdForPatch))}/profile`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -136,6 +152,12 @@ export default function ActorDashboard() {
         body: JSON.stringify({ profile_image: safeAvatar }),
       })
       
+      if (!profileRes.ok) {
+        const errorText = await profileRes.text().catch(() => 'Unknown error')
+        console.error('Profile update failed:', profileRes.status, errorText)
+        throw new Error(`Profile update failed: ${profileRes.status}`)
+      }
+      
       // Force update with cache-busted URL
       setStableAvatarUrl(safeAvatar)
       setUploadProgress('Upload complete!')
@@ -143,6 +165,9 @@ export default function ActorDashboard() {
       // Force browser to fetch fresh image
       const img = new Image()
       img.src = safeAvatar
+      
+      // Clear timeout on success
+      clearTimeout(uploadTimeout)
       
       // Clear upload state after brief success message
       setTimeout(() => {
@@ -159,12 +184,29 @@ export default function ActorDashboard() {
         refreshProfile()
       } catch {}
     } catch (e) {
+      // Clear timeout on error
+      clearTimeout(uploadTimeout)
       // Reset on failure
       setLocalAvatar(null)
       setIsUploading(false)
       setUploadProgress('')
       console.error('Avatar upload failed:', e)
-      alert('Failed to upload profile photo. Please try again.')
+      
+      // Show more helpful error message
+      let errorMsg = 'Failed to upload profile photo. '
+      if (e instanceof Error) {
+        if (e.message.includes('413') || e.message.includes('too large')) {
+          errorMsg += 'The file is too large. Please choose an image under 10MB.'
+        } else if (e.message.includes('401') || e.message.includes('403')) {
+          errorMsg += 'Your session may have expired. Please refresh the page and try again.'
+        } else if (e.message.includes('network') || e.message.includes('fetch')) {
+          errorMsg += 'Network error. Please check your connection and try again.'
+        } else {
+          errorMsg += 'Please try again or contact support if the problem persists.'
+        }
+        console.error('Error details:', e.message)
+      }
+      alert(errorMsg)
     }
   }
   

@@ -52,9 +52,6 @@ export default function AboutPage() {
               <Link href="/features" className="text-gray-700 hover:text-primary-600">
                 Features
               </Link>
-              <Link href="/pricing" className="text-gray-700 hover:text-primary-600">
-                Pricing
-              </Link>
               <Link href="/register" className="btn-touch bg-primary-600 text-white hover:bg-primary-700">
                 Get Started
               </Link>
