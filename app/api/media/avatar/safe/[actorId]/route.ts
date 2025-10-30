@@ -29,8 +29,18 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
     const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&size=160&background=9C27B0&color=fff`
 
     let url: string | null = row?.avatar_url || null
-    const cacheHeaders = {
-      'Cache-Control': 'private, max-age=60, must-revalidate',
+    // Check for cache-busting timestamp in query params
+    const searchParams = request.nextUrl.searchParams
+    const timestamp = searchParams.get('t')
+    
+    // Use shorter cache when timestamp is provided (fresh upload)
+    const cacheHeaders = timestamp ? {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+      Vary: 'Authorization',
+    } : {
+      'Cache-Control': 'private, max-age=300, stale-while-revalidate=60',
       Vary: 'Authorization',
     }
     // Intentionally ignore stored avatar_url for redirect to avoid stale/self-loop pointers.
@@ -93,7 +103,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
           try {
             const resp = await fetch(direct)
             const hdrs = new Headers(resp.headers)
-            hdrs.set('Cache-Control', 'public, max-age=31536000, immutable')
+            // Use appropriate cache headers based on whether this is a fresh upload
+            if (timestamp) {
+              hdrs.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+              hdrs.set('Pragma', 'no-cache')
+              hdrs.set('Expires', '0')
+            } else {
+              hdrs.set('Cache-Control', 'public, max-age=31536000, immutable')
+            }
             return new Response(await resp.arrayBuffer(), { status: 200, headers: hdrs })
           } catch {
             return new Response(null, { status: 302, headers: { Location: direct, ...cacheHeaders } })

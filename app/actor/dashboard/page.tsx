@@ -86,6 +86,8 @@ export default function ActorDashboard() {
   const { user, token } = useAuthStore()
   const { profile, loading, error, refresh: refreshProfile } = useActorProfile(user?.id)
   const [localAvatar, setLocalAvatar] = React.useState<string | null>(null)
+  const [isUploading, setIsUploading] = React.useState(false)
+  const [uploadProgress, setUploadProgress] = React.useState<string>('')
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [hideCompletion, setHideCompletion] = React.useState<boolean>(false)
 
@@ -100,21 +102,31 @@ export default function ActorDashboard() {
       if (!user?.id || !token) return
       const actorIdForPatch = profile?.id
       if (!actorIdForPatch) return
+      
+      // Start upload state
+      setIsUploading(true)
+      setUploadProgress('Preparing image...')
+      
       // Optimistic preview
       const preview = URL.createObjectURL(file)
       setLocalAvatar(preview)
+      
       const form = new FormData()
       form.append('file', file)
       form.append('title', file.name)
       form.append('category', 'headshot')
+      
+      setUploadProgress('Uploading image...')
       const res = await fetch(`/api/media/actor/${encodeURIComponent(String(user.id))}/upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: form,
       })
       if (!res.ok) throw new Error('Upload failed')
-      // Persist a stable safe avatar endpoint so it always resolves the latest small public headshot
-      const safeAvatar = `/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}`
+      
+      setUploadProgress('Saving changes...')
+      // Add timestamp to force cache refresh
+      const safeAvatar = `/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}?t=${Date.now()}`
       await fetch(`/api/actors/${encodeURIComponent(String(actorIdForPatch))}/profile`, {
         method: 'PATCH',
         headers: {
@@ -123,10 +135,36 @@ export default function ActorDashboard() {
         },
         body: JSON.stringify({ profile_image: safeAvatar }),
       })
-      try { refreshProfile() } catch {}
+      
+      // Force update with cache-busted URL
+      setStableAvatarUrl(safeAvatar)
+      setUploadProgress('Upload complete!')
+      
+      // Force browser to fetch fresh image
+      const img = new Image()
+      img.src = safeAvatar
+      
+      // Clear upload state after brief success message
+      setTimeout(() => {
+        setIsUploading(false)
+        setUploadProgress('')
+        // Clean up preview
+        URL.revokeObjectURL(preview)
+        setLocalAvatar(null)
+        // Update to non-timestamped URL after cache is fresh
+        setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}`)
+      }, 2000)
+      
+      try { 
+        refreshProfile()
+      } catch {}
     } catch (e) {
-      // Reset optimistic preview on failure
+      // Reset on failure
       setLocalAvatar(null)
+      setIsUploading(false)
+      setUploadProgress('')
+      console.error('Avatar upload failed:', e)
+      alert('Failed to upload profile photo. Please try again.')
     }
   }
   
@@ -136,14 +174,25 @@ export default function ActorDashboard() {
     }
   }, [user, router])
   
-  // Build a safe avatar URL we can preload immediately (does not depend on profile fetch)
+  // Build a safe avatar URL as final fallback
   const safeAvatarHref = user ? `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}` : ''
-  // Lightweight headshot tiles for fast DMAPI /api/serve thumbnails
-  const [fastHeadshotTiles, setFastHeadshotTiles] = React.useState<Array<{ thumb: string; full: string; name: string }>>([])
+  // Use a stable avatar source that doesn't change after loading
+  const [stableAvatarUrl, setStableAvatarUrl] = React.useState<string | null>(null)
+  
   React.useEffect(() => {
     if (!user?.id) return
     const id = String(user.id)
     let aborted = false
+    
+    // Set initial avatar immediately from safe endpoint
+    if (!stableAvatarUrl && !localAvatar) {
+      // The safe avatar endpoint will return the actual image or redirect to a proper fallback
+      setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(id)}`)
+    }
+    
+    // Skip tile fetching if we're uploading or have a local preview
+    if (isUploading || localAvatar) return
+    
     ;(async () => {
       try {
         const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' })
@@ -151,11 +200,14 @@ export default function ActorDashboard() {
         const j = await r.json().catch(() => null)
         if (!j || aborted) return
         const tiles = Array.isArray(j.tiles) ? j.tiles : []
-        setFastHeadshotTiles(tiles)
+        // Only update if we don't have a stable avatar yet and tiles are available
+        if (tiles.length > 0 && tiles[0]?.thumb && !localAvatar && !stableAvatarUrl) {
+          setStableAvatarUrl(tiles[0].thumb)
+        }
       } catch {}
     })()
     return () => { aborted = true }
-  }, [user?.id])
+  }, [user?.id, localAvatar, stableAvatarUrl, isUploading])
 
   if (!user) return null
 
@@ -286,38 +338,51 @@ export default function ActorDashboard() {
             <CardContent className="p-4 sm:p-6">
               <div className="flex flex-col sm:flex-row gap-4">
                 {/* Profile Photo */}
-                <div className="flex-shrink-0">
+                <div className="flex-shrink-0 relative">
                   <div className="h-32 w-32 md:h-40 md:w-40 rounded-full overflow-hidden bg-gray-100 relative">
                     <img
-                      className="h-full w-full object-cover"
+                      className={`h-full w-full object-cover ${isUploading ? 'opacity-50' : ''}`}
                       alt={profile.name}
                       src={
                         localAvatar ||
-                        fastHeadshotTiles[0]?.thumb ||
+                        stableAvatarUrl ||
                         profile.avatar_url ||
                         user?.avatar_url ||
-                        safeAvatarHref ||
-                        `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&size=160&background=9C27B0&color=fff`
+                        safeAvatarHref
                       }
                     />
-                    {/* Upload button */}
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="absolute bottom-0 right-0 p-2 bg-white rounded-full shadow-md hover:bg-gray-50"
-                    >
-                      <Camera className="w-4 h-4 text-gray-600" />
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (file) handleAvatarUpload(file)
-                      }}
-                    />
+                    {/* Upload overlay */}
+                    {isUploading && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-50 text-white">
+                        <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin mb-2"></div>
+                        <p className="text-xs font-medium text-center px-2">{uploadProgress}</p>
+                      </div>
+                    )}
                   </div>
+                  {/* Upload button - positioned outside the overflow container */}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className={`absolute bottom-1 right-1 p-2.5 bg-white rounded-full shadow-lg transition-all border border-gray-200 ${
+                      isUploading 
+                        ? 'opacity-50 cursor-not-allowed' 
+                        : 'hover:bg-gray-50 hover:scale-110'
+                    }`}
+                    title={isUploading ? 'Uploading...' : 'Change profile photo'}
+                  >
+                    <Camera className="w-5 h-5 text-gray-700" />
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={isUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleAvatarUpload(file)
+                    }}
+                  />
                 </div>
                 
                 {/* Profile Info */}
@@ -405,15 +470,6 @@ export default function ActorDashboard() {
                         Resume
                       </Button>
                     )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => router.push('/actor/media')}
-                      className="text-xs"
-                    >
-                      <Camera className="w-3 h-3 mr-1" />
-                      Media
-                    </Button>
                   </div>
                 </div>
               </div>
