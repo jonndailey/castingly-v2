@@ -6,8 +6,8 @@ import path from 'path'
 import { chromium } from 'playwright'
 
 const BASE = process.env.APP_BASE_URL || 'https://castingly.dailey.dev'
-const EMAIL = process.env.TEST_EMAIL || 'jonndailey@gmail.com'
-const PASSWORD = process.env.TEST_PASSWORD || 'A5JcGPiRUhRIS67f'
+const EMAIL = process.env.TEST_EMAIL || ''
+const PASSWORD = process.env.TEST_PASSWORD || ''
 
 const TMP = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'castingly-qa-'))
 

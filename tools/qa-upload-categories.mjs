@@ -4,8 +4,8 @@ import fs from 'fs'
 import path from 'path'
 
 const BASE = process.env.APP_BASE_URL || 'https://castingly.dailey.dev'
-const EMAIL = process.env.TEST_EMAIL || 'jonndailey@gmail.com'
-const PASSWORD = process.env.TEST_PASSWORD || 'A5JcGPiRUhRIS67f'
+const EMAIL = process.env.TEST_EMAIL || ''
+const PASSWORD = process.env.TEST_PASSWORD || ''
 
 const CATEGORIES = [
   { key: 'headshot', filename: 'headshot-test.png', mime: 'image/png' },
@@ -101,4 +101,3 @@ async function main() {
 }
 
 main().catch((e) => { console.error('qa error:', e?.message || e); process.exit(1) })
-

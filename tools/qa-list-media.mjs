@@ -2,8 +2,8 @@
 import 'dotenv/config'
 
 const BASE = process.env.APP_BASE_URL || 'https://castingly.dailey.dev'
-const EMAIL = process.env.TEST_EMAIL || 'jonndailey@gmail.com'
-const PASSWORD = process.env.TEST_PASSWORD || 'A5JcGPiRUhRIS67f'
+const EMAIL = process.env.TEST_EMAIL || ''
+const PASSWORD = process.env.TEST_PASSWORD || ''
 
 async function login() {
   const res = await fetch(`${BASE}/api/auth/login`, {
@@ -47,4 +47,3 @@ async function main() {
 }
 
 main().catch((e) => { console.error('qa-list error:', e?.message || e); process.exit(1) })
-
