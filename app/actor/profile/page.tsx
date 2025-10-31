@@ -26,8 +26,14 @@ import {
   Check,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Info,
+  GraduationCap,
+  Building,
+  BookOpen,
+  Sparkles
 } from 'lucide-react'
+import { archetypes, type Archetype } from '@/lib/archetypes'
 import { AppLayout, PageHeader, PageContent } from '@/components/layouts/app-layout'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -37,6 +43,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { ForumActivityPanel } from '@/components/forum/forum-activity-panel'
 import useAuthStore from '@/lib/store/auth-store'
 import { useActorProfile, useActorMedia, type ActorMediaEntry } from '@/lib/hooks/useActorData'
+import { useAvatarCache } from '@/lib/utils/avatar-cache'
 // import { useSignedHeadshot } from '@/lib/hooks/useSignedHeadshot'
 
 // Mock data for the profile
@@ -92,10 +99,7 @@ const profileData = {
   }
 }
 
-const archetypesList = [
-  'Hero', 'Innocent', 'Explorer', 'Sage', 'Rebel', 'Lover',
-  'Creator', 'Jester', 'Caregiver', 'Ruler', 'Magician', 'Regular Guy'
-]
+// Archetypes are imported from lib/archetypes.ts
 
 export default function ActorProfile() {
   const router = useRouter()
@@ -103,6 +107,69 @@ export default function ActorProfile() {
   // Fetch light profile first, then media separately for perceived speed
   const { profile: actorData, loading, error, refresh: refreshProfile } = useActorProfile(user?.id)
   const { media, loading: mediaLoading, reload: reloadMedia } = useActorMedia(user?.id)
+
+  // Avatar caching and preloading strategy for instant loading
+  useEffect(() => {
+    const userId = String(actorData?.id || user?.id || '')
+    if (!userId) return
+
+    const loadProfileAvatar = async () => {
+      try {
+        // First check cache for instant loading
+        const cached = await getCachedAvatar(userId)
+        if (cached) {
+          console.log('Profile avatar loaded from cache instantly:', cached.url.substring(0, 60) + '...')
+          setCachedProfileAvatarUrl(cached.url)
+          setProfileAvatarLoaded(true)
+          return
+        }
+
+        // Build avatar URL
+        const avatarApiUrl = `/api/media/avatar/safe/${encodeURIComponent(userId)}`
+        const currentAvatarUrl = actorData?.avatar_url || avatarApiUrl
+
+        // Preload and cache the image
+        const cachedUrl = await cacheAvatar(userId, currentAvatarUrl)
+        if (cachedUrl) {
+          console.log('Profile avatar cached and ready:', cachedUrl.substring(0, 60) + '...')
+          setCachedProfileAvatarUrl(cachedUrl)
+          setProfileAvatarLoaded(true)
+        } else {
+          // Fallback to regular loading with timeout
+          const avatarImg = new Image()
+          avatarImg.crossOrigin = 'anonymous'
+          avatarImg.src = currentAvatarUrl
+          avatarImg.onload = () => {
+            console.log('Profile avatar loaded via fallback:', currentAvatarUrl.substring(0, 60) + '...')
+            setProfileAvatarLoaded(true)
+          }
+          avatarImg.onerror = () => {
+            console.warn('Profile avatar loading failed, showing anyway')
+            setProfileAvatarLoaded(true)
+          }
+          
+          // Show after 1 second for better UX
+          setTimeout(() => {
+            if (!profileAvatarLoaded) {
+              console.log('Profile avatar timeout, showing image')
+              setProfileAvatarLoaded(true)
+            }
+          }, 1000)
+        }
+      } catch (error) {
+        console.error('Profile avatar caching failed:', error)
+        setProfileAvatarLoaded(true) // Show anyway
+      }
+    }
+
+    loadProfileAvatar()
+  }, [actorData?.id, user?.id, actorData?.avatar_url])
+
+  // Reset avatar loading state when the avatar URL changes
+  useEffect(() => {
+    setProfileAvatarLoaded(false)
+    setCachedProfileAvatarUrl(null) // Clear cached URL when avatar changes
+  }, [actorData?.avatar_url])
   
   const deleteMediaFile = async (fileId: string) => {
     if (!user?.id || !token || !fileId) return
@@ -119,11 +186,25 @@ export default function ActorProfile() {
     }
   }
   const [isEditing, setIsEditing] = useState(false)
-  const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string; age_range?: string; forum_display_name?: string; forum_signature?: string }>({})
+  const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string; age_range?: string; forum_display_name?: string; forum_signature?: string; archetypes?: string[]; training?: Array<{institution: string; year: string; focus: string}> }>({})
   const [saveMessage, setSaveMessage] = useState<string>('')
   const [skillsInput, setSkillsInput] = useState('')
   const [pendingSkills, setPendingSkills] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState('overview')
+  const [selectedArchetypes, setSelectedArchetypes] = useState<string[]>([])
+  const [showArchetypeModal, setShowArchetypeModal] = useState<string | null>(null)
+  const [trainingEntries, setTrainingEntries] = useState<Array<{
+    id: string
+    institution: string
+    degree?: string
+    focus: string
+    yearStart: string
+    yearEnd?: string
+    instructor?: string
+    type: 'university' | 'conservatory' | 'workshop' | 'masterclass' | 'private' | 'online'
+  }>>([])
+  const [showTrainingForm, setShowTrainingForm] = useState(false)
+  const [editingTraining, setEditingTraining] = useState<string | null>(null)
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string; index: number } | null>(null)
   const [imageGallery, setImageGallery] = useState<Array<{ src: string; alt: string }>>([])
   const [uploading, setUploading] = useState(false)
@@ -132,25 +213,28 @@ export default function ActorProfile() {
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null)
   const [fastHeadshotTiles, setFastHeadshotTiles] = useState<Array<{ thumbSrc: string; fullSrc: string; alt: string }>>([])
   const [fastGalleryTiles, setFastGalleryTiles] = useState<Array<{ thumbSrc: string; fullSrc: string; alt: string }>>([])
+  const [profileAvatarLoaded, setProfileAvatarLoaded] = useState(false)
+  const [cachedProfileAvatarUrl, setCachedProfileAvatarUrl] = useState<string | null>(null)
+  const { cacheAvatar, getCachedAvatar } = useAvatarCache()
 
   // Fast path: prefetch public small headshot tiles via lightweight API
+  const fetchHeadshotTiles = useCallback(async (id: string) => {
+    try {
+      const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles`, { cache: 'no-store' })
+      if (!r.ok) return
+      const j = await r.json()
+      const tiles = Array.isArray(j?.tiles) ? j.tiles : []
+      const mapped = tiles.map((t: any) => ({ thumbSrc: String(t.thumb), fullSrc: String(t.full), alt: String(t.name || 'Headshot') }))
+      setFastHeadshotTiles(mapped)
+    } catch {}
+  }, [])
   useEffect(() => {
     const id = String((actorData as any)?.id || user?.id || '')
     if (!id) return
     let aborted = false
-    ;(async () => {
-      try {
-        const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' })
-        if (!r.ok) return
-        const j = await r.json()
-        if (aborted) return
-        const tiles = Array.isArray(j?.tiles) ? j.tiles : []
-        const mapped = tiles.map((t: any) => ({ thumbSrc: String(t.thumb), fullSrc: String(t.full), alt: String(t.name || 'Headshot') }))
-        setFastHeadshotTiles(mapped)
-      } catch {}
-    })()
+    ;(async () => { if (!aborted) await fetchHeadshotTiles(id) })()
     return () => { aborted = true }
-  }, [(actorData as any)?.id, user?.id])
+  }, [(actorData as any)?.id, user?.id, fetchHeadshotTiles])
 
   // Fast path: prefetch public small gallery tiles via lightweight API
   useEffect(() => {
@@ -159,7 +243,7 @@ export default function ActorProfile() {
     let aborted = false
     ;(async () => {
       try {
-        const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/gallery/tiles?ts=${Date.now()}`, { cache: 'no-store' })
+        const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/gallery/tiles`, { cache: 'no-store' })
         if (!r.ok) return
         const j = await r.json()
         if (aborted) return
@@ -184,7 +268,7 @@ export default function ActorProfile() {
   const primaryHeadshot = headshots[0] ?? null
 
   // Group variants and pick small for grid, full for lightbox
-  type VariantTile = { id?: string; thumbSrc: string; fullSrc: string; alt: string }
+  type VariantTile = { id?: string; thumbSrc: string; fullSrc: string; alt: string; ts?: number }
   function splitVariant(name?: string | null) {
     const n = String(name || '').toLowerCase()
     const m = n.match(/^(.*?)(?:_(large|medium|small|thumbnail))?(\.[^.]+)?$/)
@@ -229,17 +313,32 @@ export default function ActorProfile() {
         thumbSrc: getMediaUrl(thumbEntry) ?? '',
         fullSrc: getMediaUrl(fullEntry) ?? '',
         alt: String((fullEntry as any).name || base),
+        ts: (() => { try { return Date.parse(String((fullEntry as any)?.uploaded_at || '')) || undefined } catch { return undefined } })(),
       }
       if (tile.thumbSrc && tile.fullSrc) tiles.push(tile)
     }
+    // Newest first
+    tiles.sort((a, b) => (b.ts || 0) - (a.ts || 0))
     return tiles
   }
   const galleryTilesFromMedia: VariantTile[] = buildVariantTiles((media?.gallery ?? []))
-  const galleryTiles: VariantTile[] = fastGalleryTiles.length ? fastGalleryTiles as any : galleryTilesFromMedia
+  const galleryTilesAll: VariantTile[] = fastGalleryTiles.length ? fastGalleryTiles as any : galleryTilesFromMedia
+  const galleryTiles: VariantTile[] = galleryTilesAll.slice(0, 20)
   const headshotTilesFromMedia: VariantTile[] = buildVariantTiles((media?.headshots ?? []))
-  const headshotTiles: VariantTile[] = fastHeadshotTiles.length
+  const headshotTilesAll: VariantTile[] = fastHeadshotTiles.length
     ? fastHeadshotTiles as any
     : headshotTilesFromMedia
+  const headshotTiles: VariantTile[] = headshotTilesAll.slice(0, 20)
+  
+  // Initialize archetypes and training when actor data loads
+  useEffect(() => {
+    if ((actorData as any)?.archetypes) {
+      setSelectedArchetypes((actorData as any).archetypes)
+    }
+    if ((actorData as any)?.training) {
+      setTrainingEntries((actorData as any).training)
+    }
+  }, [actorData])
   
   const openImageModal = useCallback((src: string, alt: string, gallery: Array<{ src: string; alt: string }>, index: number) => {
     setImageGallery(gallery)
@@ -301,7 +400,34 @@ export default function ActorProfile() {
     e.target.value = ''
     if (!file || !token || !user?.id) return
 
+    // Validate file size (max 50MB for videos, 10MB for images)
+    const maxSize = (pendingCategory === 'reel' || pendingCategory === 'self_tape') ? 50 * 1024 * 1024 : 10 * 1024 * 1024
+    if (file.size > maxSize) {
+      alert(`File too large. Maximum size is ${maxSize / (1024 * 1024)}MB`)
+      return
+    }
+
+    // Validate file type
+    const validTypes = {
+      headshot: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
+      gallery: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
+      reel: ['video/mp4', 'video/quicktime', 'video/webm'],
+      self_tape: ['video/mp4', 'video/quicktime', 'video/webm'],
+      voice_over: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg'],
+      resume: ['application/pdf'],
+      document: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      other: []
+    }
+    
+    const allowedTypes = validTypes[pendingCategory as keyof typeof validTypes] || []
+    if (allowedTypes.length > 0 && !allowedTypes.some(type => type === file.type)) {
+      alert(`Invalid file type. Please upload: ${allowedTypes.join(', ')}`)
+      return
+    }
+
     setUploading(true)
+    setUploadMessage(`Uploading ${file.name}...`)
+    
     try {
       // Optimistic preview for images
       if (pendingCategory === 'headshot' || pendingCategory === 'gallery') {
@@ -321,16 +447,40 @@ export default function ActorProfile() {
         const j = await res.json().catch(() => ({}))
         throw new Error(j.error || 'Upload failed')
       }
-      setUploadMessage('Uploaded successfully')
+      // Mark completed immediately; finalize in background
+      setUploading(false)
+      setUploadMessage(`✓ ${file.name} uploaded successfully`)
       setTimeout(() => setUploadMessage(''), 2500)
-      // Refresh client media immediately to reflect new headshot and update counters
+      // Refresh client media and tiles immediately to reflect new headshot
+      // Wait for tiles first to get clean /api/serve URLs
+      try {
+        if ((pendingCategory === 'headshot') && user?.id) {
+          await fetchHeadshotTiles(String(user.id))
+        }
+      } catch {}
+      // Then reload full media after tiles are set
       try { reloadMedia() } catch {}
       router.refresh()
+      // Persist a stable avatar pointer so profile reloads resolve via safe endpoint immediately
+      try {
+        if ((pendingCategory === 'headshot') && user?.id && token) {
+          const safeAvatar = `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}`
+          await fetch(`/api/actors/${encodeURIComponent(String(user.id))}/profile`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ profile_image: safeAvatar }),
+          })
+          try { await refreshProfile() } catch {}
+        }
+      } catch {}
     } catch (err: any) {
-      setUploadMessage(err?.message || 'Upload failed')
-      setTimeout(() => setUploadMessage(''), 3500)
+      console.error('Upload error:', err)
+      setUploadMessage('')
+      alert(err?.message || 'Upload failed. Please try again.')
     } finally {
-      setUploading(false)
       // Clear preview after refresh has likely pulled new media
       setTimeout(() => setUploadPreviewUrl(null), 4000)
     }
@@ -399,6 +549,16 @@ export default function ActorProfile() {
         forum_signature: (actorData as any).forum_signature || '',
       })
       setPendingSkills(Array.isArray(actorData.skills) ? actorData.skills : [])
+      
+      // Load training entries
+      if ((actorData as any).training && Array.isArray((actorData as any).training)) {
+        setTrainingEntries((actorData as any).training)
+      }
+      
+      // Load selected archetypes
+      if ((actorData as any).archetypes && Array.isArray((actorData as any).archetypes)) {
+        setSelectedArchetypes((actorData as any).archetypes)
+      }
     }
   }, [actorData])
 
@@ -426,6 +586,8 @@ export default function ActorProfile() {
           hair_color: edit.hair_color,
           age_range: edit.age_range,
           ...(pendingSkills ? { skills: pendingSkills } : {}),
+          training: trainingEntries,
+          archetypes: selectedArchetypes,
           forum_display_name: (edit as any).forum_display_name,
           forum_signature: (edit as any).forum_signature,
         }),
@@ -573,18 +735,60 @@ export default function ActorProfile() {
               <div className="flex flex-col md:flex-row gap-6">
                 {/* Profile Photo */}
                 <div className="flex flex-col items-center">
-                  <Avatar
-                    src={
-                      // Owner: prefer small public tile (edge cached), then server avatar_url, then safe fallback
-                      (user?.id && actorData?.id && String(user.id) === String(actorData.id))
-                        ? (headshotTiles?.[0]?.thumbSrc || actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`)
-                        : (headshotTiles?.[0]?.thumbSrc || actorData?.avatar_url || `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`)
-                    }
-                    alt={actorData?.name || ''}
-                    fallback={actorData?.name || ''}
-                    size="xl"
-                    className="h-32 w-32"
-                  />
+                  <div className="h-32 w-32 md:h-48 md:w-48 rounded-full overflow-hidden bg-gray-100 relative">
+                    {/* Loading skeleton */}
+                    {!profileAvatarLoaded && (
+                      <div className="absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 animate-pulse" />
+                    )}
+                    <img
+                      src={
+                        // Owner: prefer small public tile (edge cached), then server avatar_url (if not raw), then safe fallback
+                        (() => {
+                          const isRawUrl = (url: string | null | undefined) => {
+                            if (!url) return false
+                            return /(s3\.|amazonaws\.com|\.ovh\.)/i.test(url)
+                          }
+                          const avatarUrl = actorData?.avatar_url
+                          const safeAvatarUrl = (avatarUrl && !isRawUrl(avatarUrl)) ? avatarUrl : null
+                          const fallbackUrl = `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`
+                          
+                          // Add cache buster to ensure fresh images
+                          const addCacheBuster = (url: string) => {
+                            if (url.includes('?')) {
+                              return url + '&v=' + Date.now()
+                            } else {
+                              return url + '?v=' + Date.now()
+                            }
+                          }
+                          
+                          let finalUrl = cachedProfileAvatarUrl || headshotTiles?.[0]?.thumbSrc || safeAvatarUrl || fallbackUrl
+                          
+                          // Only add cache buster to our API endpoints, not external services (but not cached URLs)
+                          if (finalUrl.includes('/api/') && !finalUrl.startsWith('blob:')) {
+                            finalUrl = addCacheBuster(finalUrl)
+                          }
+                          
+                          return finalUrl
+                        })()
+                      }
+                      alt={actorData?.name || ''}
+                      className={`relative z-10 h-full w-full object-cover transition-opacity duration-300 ${profileAvatarLoaded ? 'opacity-100' : 'opacity-0'}`}
+                      loading="eager"
+                      fetchPriority="high"
+                      decoding="async"
+                      onLoad={() => {
+                        setProfileAvatarLoaded(true);
+                        console.log('Profile avatar loaded successfully');
+                      }}
+                      onError={(e) => {
+                        console.error('Profile avatar failed to load, falling back');
+                        const fallbackUrl = `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`;
+                        if (e.currentTarget.src !== fallbackUrl) {
+                          e.currentTarget.src = fallbackUrl;
+                        }
+                      }}
+                    />
+                  </div>
                   {isEditing && (
                     <Button size="sm" variant="outline" className="mt-3">
                       <Camera className="w-4 h-4 mr-2" />
@@ -958,24 +1162,39 @@ export default function ActorProfile() {
                   Loading media…
                 </div>
               )}
-              {/* Hidden uploader for media */}
+              {/* Hidden uploader for media - Dynamically set accept based on category */}
               <input
                 id="profile-upload-input"
                 type="file"
                 className="hidden"
                 onChange={onFileSelected}
-                accept="image/*,video/*,application/pdf,audio/*"
+                accept={
+                  pendingCategory === 'headshot' || pendingCategory === 'gallery' 
+                    ? 'image/jpeg,image/jpg,image/png,image/webp'
+                    : pendingCategory === 'reel' || pendingCategory === 'self_tape'
+                    ? 'video/mp4,video/quicktime,video/x-msvideo,video/webm'
+                    : pendingCategory === 'voice_over'
+                    ? 'audio/mpeg,audio/mp3,audio/wav,audio/ogg'
+                    : pendingCategory === 'resume' || pendingCategory === 'document'
+                    ? 'application/pdf,.doc,.docx'
+                    : 'image/*,video/*,application/pdf,audio/*'
+                }
               />
               {uploadMessage && (
-                <div className="md:col-span-2 lg:col-span-3 text-sm text-gray-600">{uploadMessage}</div>
+                <div className="md:col-span-2 lg:col-span-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  {uploadMessage}
+                </div>
               )}
               {/* Headshots */}
               <Card>
               <CardHeader>
-                <CardTitle>
-                  Headshots <span className="text-xs text-gray-500">({headshotTiles.length}/20)</span>
+                <CardTitle className="flex items-center justify-between">
+                  <span>Headshots <span className="text-xs text-gray-500">({headshotTiles.length}/10)</span></span>
+                  <span className="text-xs font-normal text-gray-500">Professional casting photos</span>
                 </CardTitle>
-                <CardDescription>Professional photos for casting</CardDescription>
               </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
@@ -1030,21 +1249,21 @@ export default function ActorProfile() {
                             if (sp) sp.style.display = 'none';
                           }}
                           onError={(e) => {
-                            e.currentTarget.style.display = 'none'
-                            const sp = e.currentTarget.parentElement?.querySelector('[data-spinner]') as HTMLElement | null;
-                            if (sp) sp.style.display = 'none'
-                            e.currentTarget.parentElement?.classList.add('bg-gray-300')
+                            const parent = e.currentTarget.parentElement as HTMLElement | null
+                            if (parent) parent.style.display = 'none'
                           }}
                         />
                       </div>
                     ))}
                     <button
+                      data-testid="upload-headshot"
                       onClick={() => startUpload('headshot')}
-                      disabled={uploading}
-                      className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-gray-400 disabled:opacity-50"
-                      title="Upload Headshot"
+                      disabled={uploading || headshotTiles.length >= 10}
+                      className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-2 hover:border-primary-400 hover:bg-primary-50/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={headshotTiles.length >= 10 ? 'Maximum headshots reached' : 'Upload Headshot'}
                     >
                       <Upload className="w-6 h-6 text-gray-400" />
+                      <span className="text-xs text-gray-500">Add Photo</span>
                     </button>
                   </div>
                 </CardContent>
@@ -1053,10 +1272,10 @@ export default function ActorProfile() {
               {/* Gallery Photos */}
               <Card>
               <CardHeader>
-                <CardTitle>
-                  Gallery <span className="text-xs text-gray-500">({galleryTiles.length}/20)</span>
+                <CardTitle className="flex items-center justify-between">
+                  <span>Gallery <span className="text-xs text-gray-500">({galleryTiles.length}/20)</span></span>
+                  <span className="text-xs font-normal text-gray-500">Portfolio & lifestyle photos</span>
                 </CardTitle>
-                <CardDescription>Additional photos and portfolio images</CardDescription>
               </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
@@ -1105,20 +1324,21 @@ export default function ActorProfile() {
                             if (sp) sp.style.display = 'none';
                           }}
                           onError={(e) => {
-                            e.currentTarget.style.display = 'none'
-                            const sp = e.currentTarget.parentElement?.querySelector('[data-spinner]') as HTMLElement | null;
-                            if (sp) sp.style.display = 'none'
-                            e.currentTarget.parentElement?.classList.add('bg-gray-300')
+                            const parent = e.currentTarget.parentElement as HTMLElement | null
+                            if (parent) parent.style.display = 'none'
                           }}
                         />
                       </div>
                     ))}
                     <button
+                      data-testid="upload-gallery"
                       onClick={() => startUpload('gallery')}
-                      disabled={uploading}
-                      className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-gray-400 disabled:opacity-50"
+                      disabled={uploading || galleryTiles.length >= 20}
+                      className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-2 hover:border-primary-400 hover:bg-primary-50/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={galleryTiles.length >= 20 ? 'Maximum gallery photos reached' : 'Upload Photo'}
                     >
                       <Plus className="w-6 h-6 text-gray-400" />
+                      <span className="text-xs text-gray-500">Add Photo</span>
                     </button>
                   </div>
                 </CardContent>
@@ -1138,13 +1358,13 @@ export default function ActorProfile() {
                       return (
                         <div
                           key={reel.id}
-                          className="flex items-center justify-between rounded-lg bg-gray-50 p-3"
+                          className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 rounded-lg bg-gray-50 p-3 w-full"
                         >
-                          <div className="flex items-center gap-3">
-                            <Film className="h-5 w-5 text-primary-600" />
-                            <span className="font-medium">{reel.name || 'Demo Reel'}</span>
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                            <Film className="h-5 w-5 text-primary-600 flex-shrink-0" />
+                            <span className="font-medium text-sm sm:text-base truncate max-w-[70vw] sm:max-w-none break-words">{reel.name || 'Demo Reel'}</span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto sm:justify-end">
                             {reelUrl && (
                               <Button
                                 size="sm"
@@ -1161,8 +1381,16 @@ export default function ActorProfile() {
                         </div>
                       )
                     })}
-                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('reel')}>
-                      <Upload className="w-4 h-4 mr-2" /> Upload Reel
+                    <Button 
+                      data-testid="upload-reel"
+                      variant="outline" 
+                      fullWidth 
+                      disabled={uploading} 
+                      onClick={() => startUpload('reel')}
+                      className="border-dashed hover:border-primary-400 hover:bg-primary-50/50 transition-all"
+                    >
+                      <Upload className="w-4 h-4 mr-2" /> 
+                      Upload Demo Reel
                     </Button>
                   </div>
                 </CardContent>
@@ -1179,12 +1407,12 @@ export default function ActorProfile() {
                     {(media?.self_tapes ?? []).map((tape) => {
                       const tapeUrl = getMediaUrl(tape)
                       return (
-                        <div key={tape.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                          <div className="flex items-center gap-3">
-                            <Film className="h-5 w-5 text-primary-600" />
-                            <span className="font-medium">{tape.name || 'Self-Tape'}</span>
+                        <div key={tape.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 rounded-lg bg-gray-50 p-3 w-full">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                            <Film className="h-5 w-5 text-primary-600 flex-shrink-0" />
+                            <span className="font-medium text-sm sm:text-base truncate max-w-[70vw] sm:max-w-none break-words">{tape.name || 'Self-Tape'}</span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto sm:justify-end">
                             {tapeUrl && (
                               <Button size="sm" variant="ghost" onClick={() => window.open(tapeUrl, '_blank')}>
                                 View
@@ -1197,8 +1425,16 @@ export default function ActorProfile() {
                         </div>
                       )
                     })}
-                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('self_tape')}>
-                      <Upload className="w-4 h-4 mr-2" /> Upload Self-Tape
+                    <Button 
+                      data-testid="upload-self_tape"
+                      variant="outline" 
+                      fullWidth 
+                      disabled={uploading} 
+                      onClick={() => startUpload('self_tape')}
+                      className="border-dashed hover:border-primary-400 hover:bg-primary-50/50 transition-all"
+                    >
+                      <Upload className="w-4 h-4 mr-2" /> 
+                      Upload Self-Tape Video
                     </Button>
                   </div>
                 </CardContent>
@@ -1215,11 +1451,11 @@ export default function ActorProfile() {
                     {(media?.voice_over ?? []).map((vo) => {
                       const url = getMediaUrl(vo)
                       return (
-                        <div key={vo.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                          <div className="flex items-center gap-3">
-                            <span className="font-medium">{vo.name || 'Voice Over'}</span>
+                        <div key={vo.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 rounded-lg bg-gray-50 p-3 w-full">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                            <span className="font-medium text-sm sm:text-base truncate max-w-[70vw] sm:max-w-none break-words">{vo.name || 'Voice Over'}</span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto sm:justify-end">
                             {url && (
                               <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
                                 Listen
@@ -1232,8 +1468,16 @@ export default function ActorProfile() {
                         </div>
                       )
                     })}
-                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('voice_over')}>
-                      <Upload className="w-4 h-4 mr-2" /> Upload Audio
+                    <Button 
+                      data-testid="upload-voice_over"
+                      variant="outline" 
+                      fullWidth 
+                      disabled={uploading} 
+                      onClick={() => startUpload('voice_over')}
+                      className="border-dashed hover:border-primary-400 hover:bg-primary-50/50 transition-all"
+                    >
+                      <Upload className="w-4 h-4 mr-2" /> 
+                      Upload Voice Recording
                     </Button>
                   </div>
                 </CardContent>
@@ -1250,12 +1494,12 @@ export default function ActorProfile() {
                     {(media?.resumes ?? []).map((doc) => {
                       const url = getMediaUrl(doc)
                       return (
-                        <div key={doc.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                          <div className="flex items-center gap-3">
-                            <FileText className="h-5 w-5 text-primary-600" />
-                            <span className="font-medium">{doc.name || 'Resume'}</span>
+                        <div key={doc.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 rounded-lg bg-gray-50 p-3 w-full">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                            <FileText className="h-5 w-5 text-primary-600 flex-shrink-0" />
+                            <span className="font-medium text-sm sm:text-base truncate max-w-[70vw] sm:max-w-none break-words">{doc.name || 'Resume'}</span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto sm:justify-end">
                             {url && (
                               <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
                                 View
@@ -1268,8 +1512,16 @@ export default function ActorProfile() {
                         </div>
                       )
                     })}
-                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('resume')}>
-                      <Upload className="w-4 h-4 mr-2" /> Upload Resume
+                    <Button 
+                      data-testid="upload-resume"
+                      variant="outline" 
+                      fullWidth 
+                      disabled={uploading} 
+                      onClick={() => startUpload('resume')}
+                      className="border-dashed hover:border-primary-400 hover:bg-primary-50/50 transition-all"
+                    >
+                      <Upload className="w-4 h-4 mr-2" /> 
+                      Upload Resume (PDF)
                     </Button>
                   </div>
                 </CardContent>
@@ -1286,10 +1538,10 @@ export default function ActorProfile() {
                     {(actorData?.media?.documents ?? []).map((doc) => {
                       const url = getMediaUrl(doc)
                       return (
-                        <div key={doc.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                          <div className="flex items-center gap-3">
-                            <FileText className="h-5 w-5 text-primary-600" />
-                            <span className="font-medium">{doc.name || 'Document'}</span>
+                        <div key={doc.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 rounded-lg bg-gray-50 p-3 w-full">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                            <FileText className="h-5 w-5 text-primary-600 flex-shrink-0" />
+                            <span className="font-medium text-sm sm:text-base truncate max-w-[70vw] sm:max-w-none break-words">{doc.name || 'Document'}</span>
                           </div>
                           {url && (
                             <Button size="sm" variant="ghost" onClick={() => window.open(url, '_blank')}>
@@ -1299,7 +1551,7 @@ export default function ActorProfile() {
                         </div>
                       )
                     })}
-                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('document')}>
+                    <Button data-testid="upload-document" variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('document')}>
                       <Upload className="w-4 h-4 mr-2" /> Upload Document
                     </Button>
                   </div>
@@ -1344,17 +1596,195 @@ export default function ActorProfile() {
             >
               <Card>
                 <CardHeader>
-                  <CardTitle>Training & Education</CardTitle>
-                  <CardDescription>Acting schools and workshops</CardDescription>
+                  <CardTitle className="flex items-center gap-2">
+                    <GraduationCap className="w-5 h-5" />
+                    Training & Education
+                  </CardTitle>
+                  <CardDescription>Your acting education and specialized training</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <p className="text-gray-600">Training details will be added in a future update.</p>
+                    {/* Training list */}
+                    {trainingEntries && trainingEntries.length > 0 ? (
+                      <div className="space-y-3">
+                        {trainingEntries.map((entry) => (
+                          <div key={entry.id} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 relative group hover:shadow-md transition-shadow">
+                            <div className="pr-10">
+                              <div className="flex items-start gap-3">
+                                <div className="mt-1">
+                                  {entry.type === 'university' && <GraduationCap className="w-4 h-4 text-primary-600" />}
+                                  {entry.type === 'conservatory' && <Building className="w-4 h-4 text-primary-600" />}
+                                  {entry.type === 'workshop' && <BookOpen className="w-4 h-4 text-primary-600" />}
+                                  {entry.type === 'masterclass' && <Award className="w-4 h-4 text-primary-600" />}
+                                  {entry.type === 'private' && <Sparkles className="w-4 h-4 text-primary-600" />}
+                                  {entry.type === 'online' && <Globe className="w-4 h-4 text-primary-600" />}
+                                </div>
+                                <div className="flex-1">
+                                  <h4 className="font-semibold text-gray-900 dark:text-gray-100">{entry.institution}</h4>
+                                  {entry.degree && <p className="text-sm text-primary-600 font-medium">{entry.degree}</p>}
+                                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{entry.focus}</p>
+                                  {entry.instructor && (
+                                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">Instructor: {entry.instructor}</p>
+                                  )}
+                                  <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                                    {entry.yearStart}{entry.yearEnd && entry.yearEnd !== entry.yearStart ? ` - ${entry.yearEnd}` : ''}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                            {isEditing && (
+                              <button
+                                onClick={() => {
+                                  setTrainingEntries(prev => prev.filter(e => e.id !== entry.id))
+                                }}
+                                className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 transition-opacity"
+                                title="Remove training"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <GraduationCap className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 text-sm">No training entries added yet</p>
+                        {isEditing && (
+                          <p className="text-gray-400 text-xs mt-1">Click the button below to add your training</p>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Add training button/form */}
                     {isEditing && (
-                      <Button variant="outline" fullWidth>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Training
-                      </Button>
+                      <>
+                        {!showTrainingForm ? (
+                          <Button
+                            variant="outline"
+                            fullWidth
+                            onClick={() => setShowTrainingForm(true)}
+                            className="border-dashed"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Training or Education
+                          </Button>
+                        ) : (
+                          <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 space-y-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="text-sm font-medium">Add New Training</h4>
+                              <button
+                                onClick={() => setShowTrainingForm(false)}
+                                className="text-gray-400 hover:text-gray-600"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="sm:col-span-2">
+                                <select
+                                  id="training-type"
+                                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                                  defaultValue="workshop"
+                                >
+                                  <option value="university">University/College</option>
+                                  <option value="conservatory">Conservatory</option>
+                                  <option value="workshop">Workshop</option>
+                                  <option value="masterclass">Masterclass</option>
+                                  <option value="private">Private Coaching</option>
+                                  <option value="online">Online Program</option>
+                                </select>
+                              </div>
+                              
+                              <div className="sm:col-span-2">
+                                <Input
+                                  placeholder="Institution name"
+                                  className="text-sm"
+                                  id="training-institution"
+                                />
+                              </div>
+                              
+                              <Input
+                                placeholder="Degree/Certificate (optional)"
+                                className="text-sm"
+                                id="training-degree"
+                              />
+                              
+                              <Input
+                                placeholder="Focus area (e.g., Method Acting)"
+                                className="text-sm"
+                                id="training-focus"
+                              />
+                              
+                              <Input
+                                placeholder="Start year"
+                                className="text-sm"
+                                id="training-year-start"
+                                type="number"
+                                min="1900"
+                                max={new Date().getFullYear()}
+                              />
+                              
+                              <Input
+                                placeholder="End year (optional)"
+                                className="text-sm"
+                                id="training-year-end"
+                                type="number"
+                                min="1900"
+                                max={new Date().getFullYear()}
+                              />
+                              
+                              <div className="sm:col-span-2">
+                                <Input
+                                  placeholder="Instructor/Teacher (optional)"
+                                  className="text-sm"
+                                  id="training-instructor"
+                                />
+                              </div>
+                            </div>
+                            
+                            <div className="flex gap-2">
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => {
+                                  const type = (document.getElementById('training-type') as HTMLSelectElement)?.value as any
+                                  const institution = (document.getElementById('training-institution') as HTMLInputElement)?.value
+                                  const degree = (document.getElementById('training-degree') as HTMLInputElement)?.value
+                                  const focus = (document.getElementById('training-focus') as HTMLInputElement)?.value
+                                  const yearStart = (document.getElementById('training-year-start') as HTMLInputElement)?.value
+                                  const yearEnd = (document.getElementById('training-year-end') as HTMLInputElement)?.value
+                                  const instructor = (document.getElementById('training-instructor') as HTMLInputElement)?.value
+                                  
+                                  if (institution && focus && yearStart) {
+                                    setTrainingEntries(prev => [...prev, {
+                                      id: Date.now().toString(),
+                                      type,
+                                      institution,
+                                      degree: degree || undefined,
+                                      focus,
+                                      yearStart,
+                                      yearEnd: yearEnd || undefined,
+                                      instructor: instructor || undefined
+                                    }])
+                                    setShowTrainingForm(false)
+                                  }
+                                }}
+                              >
+                                Add Training
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowTrainingForm(false)}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </CardContent>
@@ -1377,51 +1807,120 @@ export default function ActorProfile() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {archetypesList.map((archetype) => {
-                      const isSelected = false
+                  {/* Introduction text */}
+                  <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                    <p className="text-sm text-gray-700 leading-relaxed">
+                      Archetypes represent timeless character patterns that appear across stories, cultures, and performances. 
+                      They reflect universal human motivations — from the drive to explore, to the desire to nurture, to the need to lead.
+                    </p>
+                    <p className="text-sm text-gray-600 mt-2">
+                      Select up to three archetypes that best define your casting type. These help casting professionals quickly understand your natural screen or stage presence.
+                    </p>
+                  </div>
+
+                  {/* Archetype selection grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {archetypes.map((archetype) => {
+                      const isSelected = selectedArchetypes.includes(archetype.id)
                       return (
-                        <button
-                          key={archetype}
+                        <div
+                          key={archetype.id}
+                          className={cn(
+                            'relative rounded-lg border-2 transition-all',
+                            isSelected
+                              ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                              : 'border-gray-200 dark:border-gray-700',
+                            isEditing && !isSelected && selectedArchetypes.length < 3 && 'hover:border-primary-300 cursor-pointer',
+                            !isEditing && 'cursor-default',
+                            isEditing && !isSelected && selectedArchetypes.length >= 3 && 'opacity-50'
+                          )}
                           onClick={() => {
                             if (!isEditing) return
                             if (isSelected) {
-                              // TODO: Implement archetype editing
-                            } else {
-                              // TODO: Implement archetype editing
+                              setSelectedArchetypes(prev => prev.filter(a => a !== archetype.id))
+                            } else if (selectedArchetypes.length < 3) {
+                              setSelectedArchetypes(prev => [...prev, archetype.id])
                             }
                           }}
-                          disabled={!isEditing}
-                          className={cn(
-                            'p-4 rounded-lg border-2 transition-all',
-                            isSelected
-                              ? 'border-primary-500 bg-primary-50 text-primary-700'
-                              : 'border-gray-200 hover:border-gray-300',
-                            !isEditing && 'cursor-default'
-                          )}
                         >
-                          <div className="text-2xl mb-2">
-                            {archetype === 'Hero' && '🦸'}
-                            {archetype === 'Innocent' && '👶'}
-                            {archetype === 'Explorer' && '🧭'}
-                            {archetype === 'Sage' && '🧙'}
-                            {archetype === 'Rebel' && '😈'}
-                            {archetype === 'Lover' && '💕'}
-                            {archetype === 'Creator' && '🎨'}
-                            {archetype === 'Jester' && '🃏'}
-                            {archetype === 'Caregiver' && '🤱'}
-                            {archetype === 'Ruler' && '👑'}
-                            {archetype === 'Magician' && '🔮'}
-                            {archetype === 'Regular Guy' && '👔'}
+                          <div className="p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <div>
+                                <h4 className="font-semibold text-gray-900 dark:text-gray-100">
+                                  {archetype.name}
+                                </h4>
+                                <p className="text-xs text-primary-600 dark:text-primary-400 font-medium">
+                                  {archetype.tagline}
+                                </p>
+                              </div>
+                              {isSelected && (
+                                <div className="flex-shrink-0">
+                                  <div className="w-6 h-6 rounded-full bg-primary-500 flex items-center justify-center">
+                                    <Check className="w-4 h-4 text-white" />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                              {archetype.description}
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {archetype.traits.slice(0, 3).map((trait, i) => (
+                                <span 
+                                  key={i}
+                                  className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-full"
+                                >
+                                  {trait}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                          <p className="font-medium">{archetype}</p>
-                        </button>
+                          
+                          {/* Info button for examples */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setShowArchetypeModal(archetype.id)
+                            }}
+                            className="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                            title="View examples"
+                          >
+                            <Info className="w-4 h-4" />
+                          </button>
+                        </div>
                       )
                     })}
                   </div>
-                  <p className="text-sm text-gray-500 mt-4">
-                    Selected: 0/3
-                  </p>
+                  
+                  <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Selected Archetypes: {selectedArchetypes.length}/3
+                        </p>
+                        {selectedArchetypes.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {selectedArchetypes.map(id => {
+                              const arch = archetypes.find(a => a.id === id)
+                              return arch ? (
+                                <span key={id} className="text-xs px-2 py-1 bg-primary-100 text-primary-700 rounded-full">
+                                  {arch.name}
+                                </span>
+                              ) : null
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      {isEditing && selectedArchetypes.length > 0 && (
+                        <button
+                          onClick={() => setSelectedArchetypes([])}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </motion.div>
@@ -1486,6 +1985,88 @@ export default function ActorProfile() {
           />
         </div>
       )}
+      
+      {/* Archetype Info Modal */}
+      {showArchetypeModal && (() => {
+        const archetype = archetypes.find(a => a.id === showArchetypeModal)
+        if (!archetype) return null
+        
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-lg max-w-md w-full max-h-[80vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                      {archetype.name}
+                    </h3>
+                    <p className="text-sm text-primary-600 dark:text-primary-400">
+                      {archetype.tagline}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowArchetypeModal(null)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                  {archetype.description}
+                </p>
+                
+                <div className="mb-4">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                    Key Traits
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {archetype.traits.map((trait, i) => (
+                      <span 
+                        key={i}
+                        className="text-xs px-3 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full"
+                      >
+                        {trait}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                
+                {archetype.examples && archetype.examples.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                      Famous Examples
+                    </h4>
+                    <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                      {archetype.examples.map((example, i) => (
+                        <li key={i} className="flex items-center gap-2">
+                          <span className="text-primary-500">•</span>
+                          {example}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                
+                <div className="mt-6 flex justify-end">
+                  <Button
+                    size="sm"
+                    onClick={() => setShowArchetypeModal(null)}
+                  >
+                    Got it
+                  </Button>
+                </div>
+              </div>
+            </div>
+            
+            {/* Background click to close */}
+            <div
+              className="absolute inset-0 -z-10"
+              onClick={() => setShowArchetypeModal(null)}
+            />
+          </div>
+        )
+      })()}
     </AppLayout>
   )
 }
@@ -1496,22 +2077,30 @@ function cn(...classes: (string | boolean | undefined)[]) {
 
 function getMediaUrl(entry: ActorMediaEntry | { url?: string | null; signed_url?: string | null; thumbnail_url?: string | null; uploaded_at?: string | null; visibility?: string | null; metadata?: any }) {
   if (!entry) return null
-  const url: string | null = (entry as any).url || (entry as any).thumbnail_url || null
+  const url: string | null = (entry as any).url || null
+  const thumb: string | null = (entry as any).thumbnail_url || null
   const signed: string | null = (entry as any).signed_url || null
-  const isServe = typeof url === 'string' && (/^\/?api\/serve\//.test(url) || /media\.dailey\.cloud\/api\/serve\//.test(url))
-  const isProxy = typeof url === 'string' && url.startsWith('/api/media/proxy?')
   const visibility = String(((entry as any)?.visibility || (entry as any)?.metadata?.access || '')).toLowerCase()
   const bucket = String(((entry as any)?.metadata?.bucketId || (entry as any)?.metadata?.bucket_id || '')).toLowerCase()
   const publicEntry = visibility === 'public' || bucket === 'castingly-public'
-  // Prefer edge-cached serve URL for public entries when available
+
+  const looksServe = (u?: string | null) => typeof u === 'string' && (/^\/?api\/serve\//.test(u) || /media\.dailey\.cloud\/api\/serve\//.test(u))
+  const looksProxy = (u?: string | null) => typeof u === 'string' && /^\/?api\/media\/proxy\?/.test(u)
+  const looksRawStorage = (u?: string | null) => typeof u === 'string' && /(s3\.|amazonaws\.com|\.ovh\.)/i.test(u!)
+
+  // Strict preference order:
+  // 1) For public files, any /api/serve URL (edge cached)
+  // 2) Signed URL (private)
+  // 3) Non-signed URL that is not a raw storage host
+  // 4) Thumbnail as a last resort (but NEVER raw storage)
   let chosen: string | null = null
-  if ((isServe || isProxy) && url && publicEntry) {
-    chosen = url
-  } else if (url && !signed) {
-    chosen = url
-  } else {
-    chosen = signed || url || (entry as any).thumbnail_url || null
-  }
+  if (publicEntry && (looksServe(url) || looksProxy(url))) chosen = url
+  else if (publicEntry && looksServe(thumb)) chosen = thumb
+  else if (signed && !looksRawStorage(signed)) chosen = signed
+  else if (url && !looksRawStorage(url)) chosen = url
+  else if (thumb && !looksRawStorage(thumb)) chosen = thumb
+  // Never return raw S3/OVH URLs - return null instead
+  if (chosen && looksRawStorage(chosen)) return null
   if (!chosen) return null
   // Avoid cache-buster on signed URLs
   const isSigned = /[?&]X-Amz-(Signature|Credential)=/i.test(chosen)

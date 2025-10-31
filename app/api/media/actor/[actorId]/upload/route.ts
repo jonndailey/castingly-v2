@@ -48,6 +48,7 @@ export async function POST(
         const roles = (validation.roles || []).map((r) => r.toLowerCase())
         isSelf = !!(validation.user?.id && String(validation.user.id) === String(actorId))
         allowed = isSelf || roles.includes('admin') || roles.includes('agent') || roles.includes('casting_director')
+        try { console.log('[upload]', { actorId, tokenUserId: validation.user?.id, roles, isSelf, allowed }) } catch {}
       }
     } catch {}
 
@@ -115,18 +116,26 @@ export async function POST(
           files = Array.isArray(list?.files) ? list.files : []
         }
         const candidateFiles = files.filter((f: any) => {
-        const metaCat = f?.metadata?.category
-        const path = (f?.metadata?.folderPath || f?.folder_path || f?.path || '').toString()
-        const byMeta = metaCat === category
-        const byPath = category === 'headshot' ? /\/headshots\/?$/i.test(path) || path.includes('/headshots')
-                      : category === 'gallery' ? path.includes('/gallery')
-                      : true
-        const isPublic = f?.is_public === true || String(f?.metadata?.access || '').toLowerCase() === 'public'
-        if (category === 'headshot' || category === 'gallery') {
-          return (byMeta || byPath) && isPublic
-        }
-        return byMeta || byPath
-      })
+          const metaCat = String(f?.metadata?.category || '').toLowerCase()
+          const folder = (f?.metadata?.folderPath || f?.folder_path || f?.path || '').toString().toLowerCase()
+          const byMeta = metaCat === String(category)
+          let byPath = false
+          switch (category) {
+            case 'headshot': byPath = /\/headshots\/?$/i.test(folder) || folder.includes('/headshots'); break
+            case 'gallery': byPath = folder.includes('/gallery'); break
+            case 'reel': byPath = folder.includes('/reels'); break
+            case 'resume': byPath = folder.includes('/resumes'); break
+            case 'self_tape': byPath = folder.includes('/self-tapes'); break
+            case 'voice_over': byPath = folder.includes('/voice-over'); break
+            case 'document': byPath = folder.includes('/documents'); break
+            default: byPath = true; break
+          }
+          const isPublic = f?.is_public === true || String(f?.metadata?.access || '').toLowerCase() === 'public'
+          if (category === 'headshot' || category === 'gallery') {
+            return (byMeta || byPath) && isPublic
+          }
+          return byMeta || byPath
+        })
       // Dedupe image variants (_large/_medium/_small) so one uploaded image counts once
       const variantKey = (n: string) => n.toLowerCase().replace(/_(large|medium|small)(?=\.[^.]+$)/i, '')
       const seen = new Set<string>()
@@ -209,32 +218,12 @@ export async function POST(
         // If fallback fails, rethrow original error
         throw e
       }
-      let fileRecord: any = (dmapiResponse as any)?.file || null
-      const dmapiId: string | null = (dmapiResponse as any)?.mediaId || fileRecord?.id || null
-      if (dmapiId) {
-        try {
-          const full = await getDmapiFile(dmapiId)
-          fileRecord = full || fileRecord
-        } catch {}
-      }
-      if (!fileRecord || !fileRecord.public_url) {
-        try {
-          const list = await listUserFiles(token, { limit: 1000, metadata: { category } })
-          const candidates = Array.isArray(list?.files) ? list.files : []
-          const pathMatch = (v: any) => {
-            const p = (v?.folder_path || v?.metadata?.folderPath || '').toString()
-            return category === 'headshot' ? p.includes('/headshots') : category === 'gallery' ? p.includes('/gallery') : true
-          }
-          const latest = candidates.filter(pathMatch).sort((a: any,b: any)=> new Date(b.uploaded_at||0).getTime()-new Date(a.uploaded_at||0).getTime())[0]
-          if (latest) fileRecord = latest
-        } catch {}
-      }
-      const simple = simplifyFileResponse(fileRecord)
+      const fileRecord: any = (dmapiResponse as any)?.file || null
+      // Construct a fast proxy URL using the DMAPI response; avoid extra round-trips
       let proxy_url: string | null = null
-      let storedName: string | null = null
       try {
         const nameFromSigned = (fileRecord?.signed_url || '').split('?')[0].split('/')
-        storedName = nameFromSigned[nameFromSigned.length - 1] || null
+        const storedName = nameFromSigned[nameFromSigned.length - 1] || null
         if (storedName) {
           const qp = new URLSearchParams()
           qp.set('bucket', 'castingly-public')
@@ -245,24 +234,8 @@ export async function POST(
           proxy_url = `/api/media/proxy?${qp.toString()}`
         }
       } catch {}
-      // Persist avatar_url for convenience when the category is headshot
-      try {
-        if (proxy_url && category === 'headshot') {
-          await query('UPDATE users SET avatar_url = ? WHERE id = ?', [proxy_url, actorId])
-          if (storedName) {
-            await query(
-              `UPDATE profiles 
-               SET metadata = JSON_SET(
-                 COALESCE(metadata, JSON_OBJECT()),
-                 '$.avatar', JSON_OBJECT('bucket', ?, 'userId', ?, 'path', ?, 'name', ?)
-               )
-               WHERE user_id = ?`,
-              ['castingly-public', String(actorId), String(folderPath || `actors/${actorId}/headshots`), storedName, String(actorId)]
-            )
-          }
-        }
-      } catch {}
-      return NextResponse.json({ success: true, file: { ...simple, proxy_url }, id: dmapiId })
+      const simple = simplifyFileResponse(fileRecord)
+      return NextResponse.json({ success: true, file: { ...simple, proxy_url } })
     }
 
     // Fallback: privileged upload using service token (agents/admins)
@@ -312,32 +285,11 @@ export async function POST(
       } catch {}
       throw e
     }
-    let fileRecord: any = (dmapiResponse as any)?.file || null
-    const dmapiId: string | null = (dmapiResponse as any)?.mediaId || fileRecord?.id || null
-    if (dmapiId) {
-      try {
-        const full = await getDmapiFile(dmapiId)
-        fileRecord = full || fileRecord
-      } catch {}
-    }
-    if (!fileRecord || !fileRecord.public_url) {
-      try {
-        const list = await listDmapiFilesServer({ limit: 1000, userId: String(actorId), metadata: { category } }) as any
-        const candidates = Array.isArray(list?.files) ? list.files : []
-        const pathMatch = (v: any) => {
-          const p = (v?.folder_path || v?.metadata?.folderPath || '').toString()
-          return category === 'headshot' ? p.includes('/headshots') : category === 'gallery' ? p.includes('/gallery') : true
-        }
-        const latest = candidates.filter(pathMatch).sort((a: any,b: any)=> new Date(b.uploaded_at||0).getTime()-new Date(a.uploaded_at||0).getTime())[0]
-        if (latest) fileRecord = latest
-      } catch {}
-    }
-    const simple = simplifyFileResponse(fileRecord)
+    const fileRecord: any = (dmapiResponse as any)?.file || null
     let proxy_url: string | null = null
-    let storedName: string | null = null
     try {
       const nameFromSigned = (fileRecord?.signed_url || '').split('?')[0].split('/')
-      storedName = nameFromSigned[nameFromSigned.length - 1] || null
+      const storedName = nameFromSigned[nameFromSigned.length - 1] || null
       if (storedName) {
         const qp = new URLSearchParams()
         qp.set('bucket', 'castingly-public')
@@ -348,24 +300,8 @@ export async function POST(
         proxy_url = `/api/media/proxy?${qp.toString()}`
       }
     } catch {}
-    // Persist avatar_url for convenience when the category is headshot
-    try {
-      if (proxy_url && category === 'headshot') {
-        await query('UPDATE users SET avatar_url = ? WHERE id = ?', [proxy_url, actorId])
-        if (storedName) {
-          await query(
-            `UPDATE profiles 
-             SET metadata = JSON_SET(
-               COALESCE(metadata, JSON_OBJECT()),
-               '$.avatar', JSON_OBJECT('bucket', ?, 'userId', ?, 'path', ?, 'name', ?)
-             )
-             WHERE user_id = ?`,
-            ['castingly-public', String(actorId), `actors/${actorId}/headshots`, storedName, String(actorId)]
-          )
-        }
-      }
-    } catch {}
-    return NextResponse.json({ success: true, file: { ...simple, proxy_url }, id: dmapiId })
+    const simple = simplifyFileResponse(fileRecord)
+    return NextResponse.json({ success: true, file: { ...simple, proxy_url } })
   } catch (error) {
     console.error('Actor DMAPI upload failed:', error)
     return NextResponse.json(

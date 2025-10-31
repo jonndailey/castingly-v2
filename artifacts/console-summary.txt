@@ -1,0 +1,7 @@
+Total console: 6
+By type: {"log":6}
+By stage: {"login":2,"post-login":4}
+
+Top errors (up to 20):
+
+Top warnings (up to 20):

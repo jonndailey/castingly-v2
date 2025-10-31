@@ -25,6 +25,7 @@ import { ProfileAvatar } from '@/components/ui/avatar'
 import Head from 'next/head'
 import useAuthStore from '@/lib/store/auth-store'
 import { useActorProfile } from '@/lib/hooks/useActorData'
+import { useAvatarCache } from '@/lib/utils/avatar-cache'
 
 // Mock data for demo
 const stats = {
@@ -84,10 +85,21 @@ const recentSubmissions = [
 export default function ActorDashboard() {
   const router = useRouter()
   const { user, token } = useAuthStore()
-  const { profile, loading, error } = useActorProfile(user?.id)
+  const { profile, loading, error, refresh: refreshProfile } = useActorProfile(user?.id)
   const [localAvatar, setLocalAvatar] = React.useState<string | null>(null)
+  const [isUploading, setIsUploading] = React.useState(false)
+  const [uploadProgress, setUploadProgress] = React.useState<string>('')
+  const [avatarLoaded, setAvatarLoaded] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [hideCompletion, setHideCompletion] = React.useState<boolean>(false)
+  const [cachedAvatarUrl, setCachedAvatarUrl] = React.useState<string | null>(null)
+  const [stableAvatarUrl, setStableAvatarUrl] = React.useState<string | null>(null)
+  const avatarLoadedRef = React.useRef(false)
+  const cacheInitializedRef = React.useRef(false)
+  const previousProfileBase = React.useRef<string | null>(null)
+  const previousUserBase = React.useRef<string | null>(null)
+  const { cacheAvatar, cacheAvatarFromBlob, getCachedAvatar, removeCachedAvatar } = useAvatarCache()
+  const transparentPixel = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
 
   useEffect(() => {
     if (profile?.preferences?.hideProfileCompletion) {
@@ -95,41 +107,236 @@ export default function ActorDashboard() {
     }
   }, [profile?.preferences?.hideProfileCompletion])
 
+  // Avatar caching - load once per mount
+  useEffect(() => {
+    const userId = String(profile?.id || user?.id || '')
+    if (!userId || isUploading || cacheInitializedRef.current) return
+    
+    cacheInitializedRef.current = true
+
+    const loadAvatar = async () => {
+      try {
+        // Check cache first for instant loading
+        const cached = await getCachedAvatar(userId)
+        if (cached) {
+          console.log('Avatar loaded from cache instantly')
+          setCachedAvatarUrl(cached.url)
+          setAvatarLoaded(true)
+          avatarLoadedRef.current = true
+          return
+        }
+
+        // Build avatar URL
+        const avatarApiUrl = `/api/media/avatar/safe/${encodeURIComponent(userId)}`
+        const currentAvatarUrl = stableAvatarUrl || profile?.avatar_url || user?.avatar_url || avatarApiUrl
+
+        // Try to cache the image
+        const cachedUrl = await cacheAvatar(userId, currentAvatarUrl)
+        if (cachedUrl) {
+          console.log('Avatar cached and ready')
+          setCachedAvatarUrl(cachedUrl)
+          setAvatarLoaded(true)
+          avatarLoadedRef.current = true
+        } else {
+          // Fallback without caching
+          setAvatarLoaded(true)
+          avatarLoadedRef.current = true
+        }
+      } catch (error) {
+        console.error('Avatar caching error:', error)
+        setAvatarLoaded(true)
+        avatarLoadedRef.current = true
+      }
+    }
+
+    loadAvatar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, user?.id])
+
+  // Reset avatar loading state when profile changes (but not stableAvatarUrl to avoid loops)
+  useEffect(() => {
+    // Extract base URL without query params for comparison
+    const getBaseUrl = (url: string | undefined | null) => {
+      if (!url) return null
+      return url.split('?')[0]
+    }
+    
+    const profileBase = getBaseUrl(profile?.avatar_url)
+    const userBase = getBaseUrl(user?.avatar_url)
+    
+    // Only reset if the base URL actually changed (not just timestamp)
+    if (previousProfileBase.current !== profileBase || previousUserBase.current !== userBase) {
+      previousProfileBase.current = profileBase
+      previousUserBase.current = userBase
+      
+      setAvatarLoaded(false)
+      setCachedAvatarUrl(null) // Clear cached URL when avatar changes
+      avatarLoadedRef.current = false // Reset ref to allow reloading
+      cacheInitializedRef.current = false // Reset cache init to allow re-caching
+    }
+  }, [profile?.avatar_url, user?.avatar_url])
+
   const handleAvatarUpload = async (file: File) => {
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024 // 10MB
+    if (file.size > maxSize) {
+      alert(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Please choose an image under 10MB.`)
+      return
+    }
+    
+    // Add upload timeout of 60 seconds for larger files
+    const uploadTimeout = setTimeout(() => {
+      setIsUploading(false)
+      setUploadProgress('')
+      setLocalAvatar(null)
+      alert('Upload timed out. Please try again with a smaller image or check your connection.')
+    }, 60000)
+    
     try {
       if (!user?.id || !token) return
-      const actorIdForPatch = profile?.id
+      const actorIdForPatch = profile?.id || user.id
       if (!actorIdForPatch) return
+      
+      // Start upload state
+      setIsUploading(true)
+      setUploadProgress('Preparing image...')
+      
       // Optimistic preview
       const preview = URL.createObjectURL(file)
       setLocalAvatar(preview)
+      
+      // Immediately cache the uploaded file for instant display
+      const userId = String(user?.id || '')
+      if (userId) {
+        try {
+          const cachedUrl = await cacheAvatarFromBlob(userId, file, preview, 'full')
+          if (cachedUrl) {
+            setCachedAvatarUrl(cachedUrl)
+            setAvatarLoaded(true)
+            console.log('Uploaded image cached immediately for instant display')
+          }
+        } catch (error) {
+          console.warn('Failed to cache uploaded image:', error)
+        }
+      }
+      
       const form = new FormData()
       form.append('file', file)
       form.append('title', file.name)
       form.append('category', 'headshot')
+      
+      console.log('Starting upload:', {
+        fileName: file.name,
+        fileSize: `${(file.size / 1024).toFixed(1)}KB`,
+        fileType: file.type,
+        userId: user.id,
+        actorId: actorIdForPatch
+      })
+      
+      setUploadProgress('Uploading image...')
       const res = await fetch(`/api/media/actor/${encodeURIComponent(String(user.id))}/upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: form,
       })
-      if (!res.ok) throw new Error('Upload failed')
-      const j = await res.json().catch(() => ({}))
-      const first = Array.isArray(j?.file) ? j.file[0] : j?.file || {}
-      const url = first?.signed_url || first?.public_url || first?.url || first?.proxy_url || null
-      if (url) {
-        // Persist avatar_url
-        await fetch(`/api/actors/${encodeURIComponent(String(actorIdForPatch))}/profile`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ profile_image: url }),
-        })
+      
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => 'Unknown error')
+        console.error('Upload failed:', res.status, errorText)
+        throw new Error(`Upload failed: ${res.status} - ${errorText}`)
       }
+      
+      const uploadResult = await res.json().catch(() => null)
+      console.log('Upload successful:', uploadResult)
+      
+      setUploadProgress('Uploaded! Finalizing…')
+      // Remove blocking overlay now that upload finished; finalize in background
+      setIsUploading(false)
+      // Add timestamp to force cache refresh
+      const safeAvatar = `/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}?t=${Date.now()}`
+      const profileRes = await fetch(`/api/actors/${encodeURIComponent(String(actorIdForPatch))}/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ profile_image: safeAvatar }),
+      })
+      
+      if (!profileRes.ok) {
+        const errorText = await profileRes.text().catch(() => 'Unknown error')
+        console.error('Profile update failed:', profileRes.status, errorText)
+        throw new Error(`Profile update failed: ${profileRes.status}`)
+      }
+      
+      // Update with cache-busted safe URL (will be quickly replaced by tile)
+      setStableAvatarUrl(safeAvatar)
+      setUploadProgress('Upload complete!')
+      
+      // Cache the final server URL for future instant loading
+      try {
+        const finalCachedUrl = await cacheAvatar(String(user?.id || ''), safeAvatar, 'full')
+        if (finalCachedUrl) {
+          setCachedAvatarUrl(finalCachedUrl)
+          console.log('Final avatar URL cached for future instant loading')
+        }
+      } catch (error) {
+        console.warn('Failed to cache final avatar URL:', error)
+      }
+      
+      // Force browser to fetch and cache the new image
+      const img = new Image()
+      img.onload = () => {
+        console.log('New avatar loaded successfully')
+        // Update again with the fresh URL
+        setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}?v=${Date.now()}`)
+      }
+      img.onerror = () => {
+        console.error('Failed to load new avatar')
+      }
+      img.src = safeAvatar
+      
+      // Clear timeout on success
+      clearTimeout(uploadTimeout)
+      
+      // Immediately refresh the profile to get new data
+      try { 
+        await refreshProfile()
+      } catch (e) {
+        console.error('Profile refresh failed:', e)
+      }
+      
+      // Clear transient state after brief success message
+      setTimeout(() => {
+        setUploadProgress('')
+        URL.revokeObjectURL(preview)
+        setLocalAvatar(null)
+        setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}?t=${Date.now()}`)
+      }, 1200)
     } catch (e) {
-      // Reset optimistic preview on failure
+      // Clear timeout on error
+      clearTimeout(uploadTimeout)
+      // Reset on failure
       setLocalAvatar(null)
+      setIsUploading(false)
+      setUploadProgress('')
+      console.error('Avatar upload failed:', e)
+      
+      // Show more helpful error message
+      let errorMsg = 'Failed to upload profile photo. '
+      if (e instanceof Error) {
+        if (e.message.includes('413') || e.message.includes('too large')) {
+          errorMsg += 'The file is too large. Please choose an image under 10MB.'
+        } else if (e.message.includes('401') || e.message.includes('403')) {
+          errorMsg += 'Your session may have expired. Please refresh the page and try again.'
+        } else if (e.message.includes('network') || e.message.includes('fetch')) {
+          errorMsg += 'Network error. Please check your connection and try again.'
+        } else {
+          errorMsg += 'Please try again or contact support if the problem persists.'
+        }
+        console.error('Error details:', e.message)
+      }
+      alert(errorMsg)
     }
   }
   
@@ -139,10 +346,49 @@ export default function ActorDashboard() {
     }
   }, [user, router])
   
-  if (!user) return null
+  // Build a safe avatar URL as final fallback. Include a stable cache key tied to profile update time
+  const profileUpdatedAt = (profile as any)?.updated_at ? new Date((profile as any).updated_at).getTime() : undefined
+  const safeAvatarHref = user
+    ? `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}` + (profileUpdatedAt ? `?u=${profileUpdatedAt}` : '')
+    : ''
   
-  // Build a safe avatar URL we can preload immediately (does not depend on profile fetch)
-  const safeAvatarHref = `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}`
+  React.useEffect(() => {
+    if (!user?.id) return
+    const id = String(user.id)
+    let aborted = false
+    
+    // Set initial avatar immediately from safe endpoint with cache buster
+    if (!stableAvatarUrl && !localAvatar) {
+      // The safe avatar endpoint will return the actual image or redirect to a proper fallback
+      // Add cache buster to ensure we get the latest image
+      setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(id)}?init=${Date.now()}`)
+    }
+    
+    // Skip tile fetching if we're uploading or have a local preview
+    if (isUploading || localAvatar) return
+
+    // Always try to fetch small headshot tiles quickly and prefer them over the safe fallback
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' })
+        if (!r.ok || aborted) return
+        const j = await r.json().catch(() => null)
+        if (!j || aborted) return
+        const tiles = Array.isArray(j.tiles) ? j.tiles : []
+        if (tiles.length > 0 && tiles[0]?.thumb && !aborted && !localAvatar) {
+          const candidate = String(tiles[0].thumb)
+          const currentBase = stableAvatarUrl?.split('?')[0]
+          const newBase = candidate.split('?')[0]
+          if (currentBase !== newBase) {
+            setStableAvatarUrl(candidate)
+          }
+        }
+      } catch {}
+    })()
+    return () => { aborted = true }
+  }, [user?.id, localAvatar, isUploading, stableAvatarUrl])
+
+  if (!user) return null
 
   if (loading) {
     return (
@@ -193,9 +439,14 @@ export default function ActorDashboard() {
   
   return (
     <AppLayout>
-      {/* Preload the avatar so it starts fetching as early as possible */}
+      {/* Preload avatars to start fetching as early as possible */}
       <Head>
         <link rel="preload" as="image" href={safeAvatarHref} fetchPriority="high" />
+        {stableAvatarUrl && stableAvatarUrl !== safeAvatarHref && (
+          <link rel="preload" as="image" href={stableAvatarUrl} fetchPriority="high" />
+        )}
+        {/* Preload tiles endpoint to speed up discovery */}
+        <link rel="prefetch" href={`/api/media/actor/${encodeURIComponent(String(user?.id || ''))}/headshots/tiles`} />
       </Head>
       <PageHeader
         title={`Welcome back, ${user.name}!`}
@@ -259,94 +510,153 @@ export default function ActorDashboard() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-6"
         >
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="w-5 h-5" />
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <User className="w-4 h-4" />
                 Your Profile Overview
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-col md:flex-row gap-6">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row gap-4">
                 {/* Profile Photo */}
-                <div className="flex-shrink-0">
-                  <ProfileAvatar
-                    editable
-                    size="xl"
-                    alt={profile.name}
-                    // Make the safe avatar (server-resolved redirect) the first real image for instant paint.
-                    src={
-                      (localAvatar || undefined) ||
-                      safeAvatarHref ||
-                      (user?.avatar_url || undefined) ||
-                      (profile.avatar_url || undefined)
-                    }
-                    fallback={profile.name}
-                    onUpload={handleAvatarUpload}
+                <div className="flex-shrink-0 relative">
+                  <div className="h-32 w-32 md:h-40 md:w-40 rounded-full overflow-hidden bg-gray-100 relative">
+                    {/* Loading skeleton behind image */}
+                    <div className={`absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 transition-opacity duration-300 ${avatarLoaded ? 'opacity-0' : 'opacity-100 animate-pulse'}`} />
+                    <img
+                      className={`relative z-10 h-full w-full object-cover transition-opacity duration-300 ${avatarLoaded ? 'opacity-100' : 'opacity-0'} ${isUploading ? 'opacity-50' : ''}`}
+                      alt={profile.name}
+                      src={
+                        localAvatar ||
+                        cachedAvatarUrl ||
+                        profile.avatar_url ||
+                        stableAvatarUrl ||
+                        user?.avatar_url ||
+                        transparentPixel
+                      }
+                      loading="eager"
+                      fetchPriority="high"
+                      decoding="async"
+                      onLoad={() => {
+                        setAvatarLoaded(true);
+                        console.log('Avatar loaded successfully');
+                      }}
+                      onError={(e) => {
+                        console.error('Avatar failed to load, falling back');
+                        // Fallback to safe endpoint if current fails
+                        if (e.currentTarget.src !== safeAvatarHref) {
+                          e.currentTarget.src = safeAvatarHref;
+                        }
+                      }}
+                    />
+                    {/* Upload overlay */}
+                    {isUploading && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-50 text-white">
+                        <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin mb-2"></div>
+                        <p className="text-xs font-medium text-center px-2">{uploadProgress}</p>
+                      </div>
+                    )}
+                  </div>
+                  {/* Upload button - positioned outside the overflow container */}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className={`absolute bottom-1 right-1 p-2.5 bg-white rounded-full shadow-lg transition-all border border-gray-200 ${
+                      isUploading 
+                        ? 'opacity-50 cursor-not-allowed' 
+                        : 'hover:bg-gray-50 hover:scale-110'
+                    }`}
+                    title={isUploading ? 'Uploading...' : 'Change profile photo'}
+                  >
+                    <Camera className="w-5 h-5 text-gray-700" />
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={isUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleAvatarUpload(file)
+                    }}
                   />
                 </div>
                 
                 {/* Profile Info */}
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                    {profile.name}
-                  </h3>
+                <div className="flex-1 min-w-0 space-y-3">
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
+                      {profile.name}
+                    </h3>
+                    {profile.bio && (
+                      <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                        {profile.bio}
+                      </p>
+                    )}
+                  </div>
                   
-                  {profile.bio && (
-                    <p className="text-gray-600 mb-4 leading-relaxed">
-                      {profile.bio}
-                    </p>
-                  )}
-                  
-                  {/* Skills */}
-                  {profile.skills && profile.skills.length > 0 && (
-                    <div className="mb-4">
-                      <h4 className="text-sm font-medium text-gray-700 mb-2">Skills & Specialties</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {profile.skills.slice(0, 6).map((skill, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs">
-                            {skill}
-                          </Badge>
-                        ))}
-                        {profile.skills.length > 6 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{profile.skills.length - 6} more
-                          </Badge>
-                        )}
-                      </div>
+                  {/* Two column grid for info */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Physical Attributes */}
+                    <div className="space-y-2">
+                      {(profile.height || profile.eye_color || profile.hair_color) && (
+                        <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                          <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Physical</h4>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            {profile.height && (
+                              <div>
+                                <span className="text-gray-500 block">Height</span>
+                                <p className="font-medium text-gray-900">{profile.height}</p>
+                              </div>
+                            )}
+                            {profile.eye_color && (
+                              <div>
+                                <span className="text-gray-500 block">Eyes</span>
+                                <p className="font-medium text-gray-900">{profile.eye_color}</p>
+                              </div>
+                            )}
+                            {profile.hair_color && (
+                              <div>
+                                <span className="text-gray-500 block">Hair</span>
+                                <p className="font-medium text-gray-900">{profile.hair_color}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  
-                  {/* Physical Stats */}
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    {profile.height && (
-                      <div>
-                        <span className="text-gray-500">Height:</span>
-                        <p className="font-medium">{profile.height}</p>
-                      </div>
-                    )}
-                    {profile.eye_color && (
-                      <div>
-                        <span className="text-gray-500">Eyes:</span>
-                        <p className="font-medium">{profile.eye_color}</p>
-                      </div>
-                    )}
-                    {profile.hair_color && (
-                      <div>
-                        <span className="text-gray-500">Hair:</span>
-                        <p className="font-medium">{profile.hair_color}</p>
+                    
+                    {/* Skills - Compact */}
+                    {profile.skills && profile.skills.length > 0 && (
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Top Skills</h4>
+                        <div className="flex flex-wrap gap-1">
+                          {profile.skills.slice(0, 4).map((skill, index) => (
+                            <Badge key={index} variant="secondary" className="text-[10px] px-2 py-0.5">
+                              {skill}
+                            </Badge>
+                          ))}
+                          {profile.skills.length > 4 && (
+                            <Badge variant="outline" className="text-[10px] px-2 py-0.5">
+                              +{profile.skills.length - 4}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
                   
-                  {/* Quick Actions */}
-                  <div className="flex gap-2 mt-4">
+                  {/* Quick Actions - Inline */}
+                  <div className="flex gap-2 pt-2">
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="default"
                       onClick={() => router.push('/actor/profile')}
+                      className="text-xs"
                     >
                       Edit Profile
                     </Button>
@@ -355,9 +665,10 @@ export default function ActorDashboard() {
                         size="sm"
                         variant="outline"
                         onClick={() => window.open(profile.resume_url!, '_blank')}
+                        className="text-xs"
                       >
-                        <FileText className="w-4 h-4 mr-1" />
-                        View Resume
+                        <FileText className="w-3 h-3 mr-1" />
+                        Resume
                       </Button>
                     )}
                   </div>
@@ -368,25 +679,25 @@ export default function ActorDashboard() {
         </motion.div>
         
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
             <Card>
-              <CardContent className="p-4">
+              <CardContent className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Profile Views</p>
-                    <p className="text-2xl font-bold">{stats.profileViews}</p>
-                    <p className="text-xs text-green-600 flex items-center mt-1">
-                      <TrendingUp className="w-3 h-3 mr-1" />
+                    <p className="text-xs text-gray-600">Profile Views</p>
+                    <p className="text-xl font-bold">{stats.profileViews}</p>
+                    <p className="text-[10px] text-green-600 flex items-center mt-0.5">
+                      <TrendingUp className="w-2.5 h-2.5 mr-0.5" />
                       +12% this week
                     </p>
                   </div>
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <Star className="w-5 h-5 text-purple-600" />
+                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <Star className="w-4 h-4 text-purple-600" />
                   </div>
                 </div>
               </CardContent>
@@ -399,15 +710,15 @@ export default function ActorDashboard() {
             transition={{ delay: 0.2 }}
           >
             <Card>
-              <CardContent className="p-4">
+              <CardContent className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Submissions</p>
-                    <p className="text-2xl font-bold">{stats.submissions}</p>
-                    <p className="text-xs text-gray-500 mt-1">This month</p>
+                    <p className="text-xs text-gray-600">Submissions</p>
+                    <p className="text-xl font-bold">{stats.submissions}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">This month</p>
                   </div>
-                  <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center">
-                    <Video className="w-5 h-5 text-teal-600" />
+                  <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
+                    <Video className="w-4 h-4 text-teal-600" />
                   </div>
                 </div>
               </CardContent>
@@ -420,15 +731,15 @@ export default function ActorDashboard() {
             transition={{ delay: 0.3 }}
           >
             <Card>
-              <CardContent className="p-4">
+              <CardContent className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Callbacks</p>
-                    <p className="text-2xl font-bold">{stats.callbacks}</p>
-                    <p className="text-xs text-gray-500 mt-1">Awaiting</p>
+                    <p className="text-xs text-gray-600">Callbacks</p>
+                    <p className="text-xl font-bold">{stats.callbacks}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Awaiting</p>
                   </div>
-                  <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <Calendar className="w-5 h-5 text-orange-600" />
+                  <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <Calendar className="w-4 h-4 text-orange-600" />
                   </div>
                 </div>
               </CardContent>
@@ -441,15 +752,15 @@ export default function ActorDashboard() {
             transition={{ delay: 0.4 }}
           >
             <Card>
-              <CardContent className="p-4">
+              <CardContent className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Bookings</p>
-                    <p className="text-2xl font-bold">{stats.bookings}</p>
-                    <p className="text-xs text-gray-500 mt-1">This year</p>
+                    <p className="text-xs text-gray-600">Bookings</p>
+                    <p className="text-xl font-bold">{stats.bookings}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">This year</p>
                   </div>
-                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 text-green-600" />
+                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
                   </div>
                 </div>
               </CardContent>

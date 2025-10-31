@@ -118,4 +118,8 @@ test-*.mjs
 # Database exports and backups
 *.sql
 *.dump
-database/migrations/real_data/
+database/migrations/real_data//artifacts
+ 
+# Local artifacts from scripts and MCP browser
+/artifacts/
+tools/qa-assets/

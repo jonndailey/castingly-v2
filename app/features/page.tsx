@@ -100,9 +100,6 @@ export default function FeaturesPage() {
               Castingly
             </Link>
             <div className="flex items-center gap-6">
-              <Link href="/pricing" className="text-gray-700 hover:text-primary-600">
-                Pricing
-              </Link>
               <Link href="/about" className="text-gray-700 hover:text-primary-600">
                 About
               </Link>
@@ -274,12 +271,6 @@ export default function FeaturesPage() {
               className="btn-touch bg-primary-600 text-white hover:bg-primary-700 text-lg px-8 inline-flex items-center gap-2"
             >
               Start Free Trial <ArrowRight className="w-5 h-5" />
-            </Link>
-            <Link 
-              href="/pricing"
-              className="btn-touch border-2 border-primary-600 text-primary-600 hover:bg-primary-50 text-lg px-8"
-            >
-              View Pricing
             </Link>
           </div>
         </div>

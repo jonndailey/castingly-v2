@@ -57,6 +57,12 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const includeMediaParam = searchParams.get('media') || searchParams.get('includeMedia')
     const includeMedia = includeMediaParam === '1' || includeMediaParam === 'true'
+    // Opt-in flag to perform slower DMAPI avatar discovery; default is fast path
+    const resolveAvatarParam =
+      searchParams.get('resolveAvatar') ||
+      searchParams.get('resolve_avatar') ||
+      searchParams.get('avatar')
+    const shouldResolveAvatar = resolveAvatarParam === '1' || /^(true|yes|on)$/i.test(String(resolveAvatarParam || ''))
     const { id } = await context.params
     let actor: any = null
     // Try DB first but do not fail hard if DB is unavailable
@@ -179,19 +185,25 @@ export async function GET(
       )
     }
 
+    // Fast path: skip legacy media lookup unless the caller requested full media
     let legacyMedia: LegacyMediaRecord[] = []
-    try {
-      legacyMedia = (await actors.getMedia(String((actor as any).id))) as LegacyMediaRecord[]
-    } catch (e) {
-      try { console.warn('[actors/:id] DB media lookup failed, continuing with DMAPI/empty legacy media:', (e as any)?.message || e) } catch {}
-      legacyMedia = []
+    if (includeMedia) {
+      try {
+        legacyMedia = (await actors.getMedia(String((actor as any).id))) as LegacyMediaRecord[]
+      } catch (e) {
+        try { console.warn('[actors/:id] DB media lookup failed, continuing with DMAPI/empty legacy media:', (e as any)?.message || e) } catch {}
+        legacyMedia = []
+      }
     }
 
     const skillsArray = parseSkills(actor.skills)
 
     const authHeader = request.headers.get('authorization')
-    const authResult = await validateUserToken(authHeader)
-    const includePrivate = authResult?.userId === actor.id
+    let includePrivate = false
+    if (includeMedia) {
+      const authResult = await validateUserToken(authHeader)
+      includePrivate = authResult?.userId === actor.id
+    }
 
     // Serve from cache quickly if available and safe
     const cacheKey = `${actor.id}|m=${includeMedia?'1':'0'}|p=${includePrivate?'1':'0'}`
@@ -405,24 +417,106 @@ export async function GET(
       }
     }
 
-    let media: CategorisedMedia
+    let media: CategorisedMedia | null
     if (includeMedia && dmapiFiles.length > 0) {
       const categorised = categoriseDmapiFiles(dmapiFiles, String(actor.id))
-      media = includePrivate
-        ? categorised
-        : filterToPublicMedia(categorised)
-    } else {
+      media = includePrivate ? categorised : filterToPublicMedia(categorised)
+      const byDate = (arr: any[]) => arr.sort((a: any, b: any) => new Date(b.uploaded_at || 0).getTime() - new Date(a.uploaded_at || 0).getTime())
+      try {
+        media.headshots = byDate(media.headshots || [])
+        media.gallery = byDate(media.gallery || [])
+        media.reels = byDate(media.reels || [])
+        media.other = byDate(media.other || [])
+        media.all = byDate(media.all || [])
+      } catch {}
+    } else if (includeMedia) {
       media = categoriseLegacyMedia(legacyMedia)
+    } else {
+      media = null
     }
 
-    let avatarFromDmapi = media.headshots?.[0]?.url || media.headshots?.[0]?.signed_url
-    if (!avatarFromDmapi) {
+    // Get avatar from DMAPI media, but filter out raw storage URLs
+    const isRawStorageUrl = (u?: string | null) => {
+      if (!u || typeof u !== 'string') return false
+      try {
+        const host = new URL(u).host
+        return /(^|\.)s3\.|amazonaws\.com|\.ovh\./i.test(host)
+      } catch { return false }
+    }
+    
+    // Try to get a clean avatar URL from headshots
+    let avatarFromDmapi = null
+    const firstHeadshot = (media as any)?.headshots?.[0]
+    if (firstHeadshot) {
+      // Prefer non-raw URLs in order: thumbnail_url, signed_url, url
+      const candidates = [
+        firstHeadshot.thumbnail_url,
+        firstHeadshot.signed_url,
+        firstHeadshot.url
+      ]
+      for (const url of candidates) {
+        if (url && !isRawStorageUrl(url)) {
+          avatarFromDmapi = url
+          break
+        }
+      }
+    }
+    // Prefer newest public small variant from castingly-public via folder listing (opt-in)
+    if (!avatarFromDmapi && shouldResolveAvatar) {
+      try {
+        const folder = await listBucketFolder({
+          bucketId: 'castingly-public',
+          userId: String(actor.id),
+          path: `actors/${actor.id}/headshots`,
+        })
+        const files = Array.isArray((folder as any)?.files) ? (folder as any).files : []
+        if (files.length > 0) {
+          const smalls = files.filter((x: any) => /_small\./i.test(String(x?.name || '')))
+          const scored = (arr: any[]) => arr
+            .map((x) => ({ x, ts: (() => { const m = String(x?.name || '').match(/^(\d{10,})/); return m ? parseInt(m[1], 10) : 0 })() }))
+            .sort((a, b) => b.ts - a.ts)
+          const pick = (smalls.length ? scored(smalls) : scored(files))[0]?.x
+          if (pick?.name) {
+            const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
+            if (base) {
+              const tail = `actors/${actor.id}/headshots/`
+              avatarFromDmapi = `${base}/api/serve/files/${encodeURIComponent(String(actor.id))}/castingly-public/${tail}${encodeURIComponent(String(pick.name))}`
+            }
+          }
+        }
+      } catch {}
+    }
+    if (!avatarFromDmapi && shouldResolveAvatar) {
       try {
         // Lightweight headshot lookup even when includeMedia=false
         const quick = await listActorDmapiFiles(String(actor.id), { limit: 1, category: 'headshot', order: 'desc', sort: 'uploaded_at' })
         const f: any = Array.isArray((quick as any)?.files) && (quick as any).files[0]
         if (f) {
-          avatarFromDmapi = f.signed_url || f.public_url || f.url || null
+          try {
+            const metadata = (f.metadata || {}) as Record<string, unknown>
+            const bucketId = String((metadata as any).bucketId || (metadata as any).bucket_id || '').toLowerCase()
+            const folderPath = String((metadata as any).folderPath || (metadata as any).folder_path || '')
+            const storageKey: string | undefined = (f as any)?.storage_key
+            const storageName = typeof storageKey === 'string' && storageKey.includes('/')
+              ? storageKey.split('/').pop() || ''
+              : ''
+            const name = (storageName || String(f.original_filename || (f as any).name || '')).trim()
+            const visibility = String(
+              (f as any).is_public ? 'public' : ((metadata as any).access || (metadata as any).visibility || '')
+            ).toLowerCase()
+            const isPublic = visibility === 'public' || bucketId === 'castingly-public'
+            let preferred: string | null = null
+            if (isPublic && bucketId === 'castingly-public' && name) {
+              const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
+              if (base) {
+                const tail = folderPath ? `${String(folderPath).replace(/^\/+|\/+$/g, '')}/` : ''
+                preferred = `${base}/api/serve/files/${encodeURIComponent(String(actor.id))}/castingly-public/${tail}${encodeURIComponent(name)}`
+              }
+          }
+          avatarFromDmapi = preferred || (f.url || f.thumbnail_url || f.signed_url || f.public_url || null)
+        } catch {
+          avatarFromDmapi = (f.url || f.thumbnail_url || f.signed_url || f.public_url || null)
+        }
         }
       } catch {}
     }
@@ -439,23 +533,25 @@ export async function GET(
 
     // If the stored avatar is our proxy without a presigned URL, try to attach one using the caller's token
     try {
-      const vr = await validateUserToken(authHeader)
       const needsSign = typeof legacyAvatar === 'string' && legacyAvatar.includes('/api/media/proxy?') && !legacyAvatar.includes('signed=')
-      if (vr?.token && needsSign) {
-        const u = new URL(legacyAvatar!, 'https://castingly.dailey.dev')
-        const name = u.searchParams.get('name') || ''
-        const folder = u.searchParams.get('path') || ''
-        const listed = await listUserFiles(vr.token, { limit: 500 })
-        const files = Array.isArray(listed?.files) ? listed.files : []
-        const match = files.find((f: any) => {
-          const fname = String(f.original_filename || f.name || f.id || '')
-          const fpath = String(f.folder_path || (f.metadata && (f.metadata as any).folderPath) || '')
-          return fname === name && (!folder || fpath.includes(folder))
-        })
-        const signed = (match as any)?.signed_url as string | undefined
-        if (signed) {
-          u.searchParams.set('signed', signed)
-          legacyAvatar = u.pathname + '?' + u.searchParams.toString()
+      if (shouldResolveAvatar && needsSign) {
+        const vr = await validateUserToken(authHeader)
+        if (vr?.token) {
+          const u = new URL(legacyAvatar!, 'https://castingly.dailey.dev')
+          const name = u.searchParams.get('name') || ''
+          const folder = u.searchParams.get('path') || ''
+          const listed = await listUserFiles(vr.token, { limit: 500 })
+          const files = Array.isArray(listed?.files) ? listed.files : []
+          const match = files.find((f: any) => {
+            const fname = String(f.original_filename || f.name || f.id || '')
+            const fpath = String(f.folder_path || (f.metadata && (f.metadata as any).folderPath) || '')
+            return fname === name && (!folder || fpath.includes(folder))
+          })
+          const signed = (match as any)?.signed_url as string | undefined
+          if (signed) {
+            u.searchParams.set('signed', signed)
+            legacyAvatar = u.pathname + '?' + u.searchParams.toString()
+          }
         }
       }
     } catch {}
@@ -467,8 +563,8 @@ export async function GET(
     const hasEye = typeof actor.eye_color === 'string' && actor.eye_color.trim().length > 0
     const hasHair = typeof actor.hair_color === 'string' && actor.hair_color.trim().length > 0
     const hasSkills = Array.isArray(skillsArray) && skillsArray.length > 0
-    const hasHeadshot = Array.isArray(media.headshots) && media.headshots.length > 0
-    const galleryImages = (media.other || []).filter((m) => typeof m.mime_type === 'string' && m.mime_type.startsWith('image/'))
+    const hasHeadshot = Array.isArray((media as any)?.headshots) && ((media as any).headshots.length > 0)
+    const galleryImages = (((media as any)?.other) || []).filter((m: any) => typeof m.mime_type === 'string' && m.mime_type.startsWith('image/'))
     const hasGallery = galleryImages.length > 0
     const checklist = [hasBio, hasLocation, hasHeight, hasEye, hasHair, hasSkills, hasHeadshot, hasGallery]
     const met = checklist.reduce((acc, v) => acc + (v ? 1 : 0), 0)
@@ -507,7 +603,7 @@ export async function GET(
       profile_image: resolveWebAvatarUrl(legacyAvatar, actor.name),
       resume_url: actor.resume_url,
       location: actor.location || 'Los Angeles',
-      media,
+      media: includeMedia ? (media as any) : null,
       profile_completion: profileCompletion,
       preferences,
       created_at: actor.created_at,
@@ -639,10 +735,11 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
       directUrlCandidate && originalLower && directName === originalLower && storageLower && directName !== storageLower
     )
 
-    // Prefer stable edge-cached URL for public items in castingly-public via DMAPI /api/serve
+    // Prefer stable edge-cached URL for public images in castingly-public via DMAPI /api/serve
     let preferredUrl: string | null = null
     const isPublic = resolveVisibility(file, metadata) === 'public'
-    if (isPublic && bucketId && bucketId.toLowerCase() === 'castingly-public' && actorId) {
+    const isImage = typeof file.mime_type === 'string' && file.mime_type.toLowerCase().startsWith('image/')
+    if (isPublic && isImage && bucketId && bucketId.toLowerCase() === 'castingly-public' && actorId) {
       try {
         const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
         if (base) {
@@ -653,18 +750,47 @@ function categoriseDmapiFiles(files: DmapiFile[], actorId?: string): Categorised
       } catch {}
     }
 
+    // Never use raw S3/OVH URLs
+    const isRawStorageUrl = (u?: string | null) => {
+      if (!u || typeof u !== 'string') return false
+      try {
+        const host = new URL(u).host
+        return /(^|\.)s3\.|amazonaws\.com|\.ovh\./i.test(host)
+      } catch { return false }
+    }
+    
+    // Select URL with strict preference, avoiding raw storage
+    let selectedUrl = preferredUrl
+    if (!selectedUrl && directLooksLikeOriginalButNotStorage) {
+      selectedUrl = proxyUrl || null
+    } else if (!selectedUrl) {
+      if (directUrlCandidate && !isRawStorageUrl(directUrlCandidate)) {
+        selectedUrl = directUrlCandidate
+      } else if (proxyUrl) {
+        selectedUrl = proxyUrl
+      }
+    }
+    
     const simplified: SimplifiedMedia = {
       id: file.id,
-      // Prefer serve URL for public files; else direct; else proxy on mismatch
-      url: preferredUrl || (directLooksLikeOriginalButNotStorage ? (proxyUrl || null) : (directUrlCandidate || proxyUrl || null)),
-      signed_url: directLooksLikeOriginalButNotStorage ? null : ((file as any)?.signed_url || null),
-      thumbnail_url:
-        (file as any)?.thumbnail_signed_url ||
-        (file as any)?.thumbnail_url ||
-        preferredUrl ||
-        (directLooksLikeOriginalButNotStorage ? null : (file as any)?.public_url) ||
-        proxyUrl ||
-        null,
+      // Never use raw storage URLs
+      url: selectedUrl,
+      signed_url: directLooksLikeOriginalButNotStorage ? null : 
+        (!isRawStorageUrl((file as any)?.signed_url) ? (file as any)?.signed_url : null),
+      thumbnail_url: (() => {
+        // Try each option but skip raw storage URLs
+        const candidates = [
+          (file as any)?.thumbnail_signed_url,
+          (file as any)?.thumbnail_url,
+          preferredUrl,
+          (directLooksLikeOriginalButNotStorage ? null : (file as any)?.public_url),
+          proxyUrl
+        ]
+        for (const url of candidates) {
+          if (url && !isRawStorageUrl(url)) return url
+        }
+        return null
+      })(),
       name: file.original_filename,
       size: file.file_size,
       mime_type: file.mime_type,

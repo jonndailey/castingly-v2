@@ -183,3 +183,84 @@ DMAPI host (dmapiapp01) quick refs:
 Cloudflare checks (from your workstation):
 - Warm: `curl -I 'https://media.dailey.cloud/api/serve/files/<uid>/castingly-public/actors/<uid>/headshots/<name>.webp'`
 - Repeat: expect `cf-cache-status: HIT`, `Cache-Control: public, max-age=31536000, immutable`.
+### Email (SendGrid) — configure and test
+
+1) Set env in `.env.production` on the app server:
+
+```
+SENDGRID_API_KEY=...            # or SEND_GRID_API_KEY
+SENDGRID_FROM_EMAIL=noreply@castingly.com
+SENDGRID_FROM_NAME=Castingly
+```
+
+2) Rebuild + restart to load new envs:
+
+```
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && npm run build && pm2 restart castingly-v2 --update-env"'
+```
+
+3) Send a test email:
+
+```
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && TO=you@example.com node tools/sendgrid-test.mjs"'
+```
+
+### Provision Beta Actors (Core + Castingly DB)
+
+Create/activate users in Dailey Core under the `castingly` tenant, enroll in tenant apps, and ensure public actor profiles exist in the Castingly DB (so /api/actors and /talent routes work pre-login).
+
+1) Run provisioning in production env:
+
+```
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && MIGRATION_ENV=.env.production node tools/provision-beta-actors.mjs --dry"'
+# if output looks good, apply (creates users + DB rows):
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && MIGRATION_ENV=.env.production node tools/provision-beta-actors.mjs"'
+```
+
+Outputs passwords CSV for emailing: `artifacts/provision/beta-actors-passwords.csv`.
+
+2) Send the welcome email (test first):
+
+```
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && export SENDGRID_API_KEY=*** SENDGRID_FROM_EMAIL=noreply@castingly.com SENDGRID_FROM_NAME=Castingly && node tools/send-welcome-castingly.mjs"'
+# Sends to jonny@dailey.llc by default (TEST_ONLY)
+```
+
+3) Send to all recipients (requires passwords CSV):
+
+```
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && export SENDGRID_API_KEY=*** SENDGRID_FROM_EMAIL=noreply@castingly.com SENDGRID_FROM_NAME=Castingly ALL=1 node tools/send-welcome-castingly.mjs"'
+```
+### Media: Broken Image Swaps / Cleanup
+
+Detect if a good `/api/serve` image is replaced by a raw S3/OVH URL after login:
+
+```
+BASE_URL=https://castingly.dailey.dev \\
+USERNAME='actor.demo@castingly.com' \\
+PASSWORD='Act0r!2025' \\
+npm run -s tools:check:image-swap
+```
+
+Artifacts: `artifacts/check/events.json`, `artifacts/check/profile.png`.
+
+Run DMAPI cleaner for public headshots (dry-run):
+
+```
+ACTOR_ID='<actor-uuid>' \\
+DMAPI_BASE_URL='https://media.dailey.cloud' \\
+DAILEY_CORE_AUTH_URL='https://core.dailey.cloud' \\
+DMAPI_SERVICE_EMAIL='dmapi-service@castingly.com' \\
+DMAPI_SERVICE_PASSWORD='********' \\
+npm run -s dmapi:clean:headshots
+```
+
+Apply deletes:
+
+```
+ACTOR_ID='<actor-uuid>' DELETE=1 npm run -s dmapi:clean:headshots
+```
+
+Notes:
+- The tiles API (server) emits `/api/serve` URLs for public assets and HEAD‑validates fallback URLs.
+- The client never swaps a working image to a raw storage host and removes tiles on error.

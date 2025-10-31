@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDb } from '@/lib/db_connect'
+import { query } from '@/lib/db_existing'
 import { getRequestUser } from '@/lib/auth/request-user'
 
 export async function GET(request: NextRequest) {
@@ -12,7 +13,15 @@ export async function GET(request: NextRequest) {
     const mode = searchParams.get('mode') || 'actor'
     let rows: any[] = []
     if (mode === 'agent') {
-      rows = await connectDb.listInboxForAgent(user.id, status)
+      // Map Core user id to local DB id via email, to match agencies.user_id
+      let dbUserId = user.id
+      if (user.email) {
+        try {
+          const found = (await query('SELECT id FROM users WHERE email = ? LIMIT 1', [user.email])) as Array<{ id: string }>
+          if (found?.[0]?.id) dbUserId = String(found[0].id)
+        } catch {}
+      }
+      rows = await connectDb.listInboxForAgent(dbUserId, status)
     } else {
       rows = await connectDb.listSubmissionsForActor(user.id, status)
     }
@@ -44,4 +53,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create submission' }, { status: 500 })
   }
 }
-

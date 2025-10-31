@@ -68,9 +68,16 @@ export async function GET(request: NextRequest) {
       const signedUrl = (prefer as any)?.signed_url as string | undefined
       const publicUrl = (prefer as any)?.public_url as string | undefined
       if (isPublicBucket) {
-        // Prefer our DMAPI serve path so Cloudflare can cache at edge
+        // For non-image assets (video/audio), prefer direct signed/public URL due to object name differences
+        const baseName = String((prefer as any)?.name || (prefer as any)?.original_filename || name || '').toLowerCase()
+        if (/\.(mp4|mov|m4v|webm|mp3|wav)$/i.test(baseName)) {
+          if (signedUrl || publicUrl) {
+            return new Response(null, { status: 302, headers: { Location: signedUrl || publicUrl!, ...cacheHeaders } })
+          }
+        }
+        // Images: prefer DMAPI serve path so Cloudflare can cache at edge
         const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
-        const tail = String(path || '').replace(/^.*?\//, '')
+        const tail = String(path || '').replace(/^\/+|\/+$/g, '') // keep full folder (e.g., actors/<id>/headshots)
         const namePart = encodeURIComponent(String((prefer as any)?.name || (prefer as any)?.original_filename || name))
         const serveUrl = `${base}/api/serve/files/${encodeURIComponent(String(userId))}/castingly-public/${tail ? tail + '/' : ''}${namePart}`
         return new Response(null, { status: 302, headers: { Location: serveUrl, ...cacheHeaders } })

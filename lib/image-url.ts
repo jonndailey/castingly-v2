@@ -9,6 +9,7 @@ export function isSafeRelativeImagePath(value?: string | null): boolean {
   // Only allow known public-relative folders
   return (
     v.startsWith('/api/media/proxy?') || v.startsWith('api/media/proxy?') ||
+    v.startsWith('/api/media/avatar/safe') || v.startsWith('api/media/avatar/safe') ||
     v.startsWith('/downloaded_images/') || v.startsWith('downloaded_images/') ||
     v.startsWith('/images/') || v.startsWith('images/') ||
     v.startsWith('/img/') || v.startsWith('img/') ||

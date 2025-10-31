@@ -364,24 +364,11 @@ export const SideNav: React.FC = () => {
             })}
           </nav>
           
-          {/* User profile section */}
-          <div className="flex-shrink-0 border-t border-gray-200 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <div>
-                  <img
-                    className="inline-block h-9 w-9 rounded-full"
-                    src={`/api/media/avatar/safe/${encodeURIComponent(user.id)}`}
-                    alt={user.name}
-                    decoding="async"
-                    onError={(e) => {
-                      const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`
-                      if ((e.currentTarget as HTMLImageElement).src !== fallback) {
-                        ;(e.currentTarget as HTMLImageElement).src = fallback
-                      }
-                    }}
-                  />
-                </div>
+          {/* User profile section with resilient avatar (prefer DMAPI /api/serve via tiles) */}
+  <div className="flex-shrink-0 border-t border-gray-200 p-4">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center">
+        <NavAvatar userId={String(user.id)} name={user.name} url={(user?.avatar_url as string) || null} />
                 <div className="ml-3">
                   <p className="text-sm font-medium text-gray-700">{user.name}</p>
                   <p className="text-xs text-gray-500">{user.role.replace('_', ' ')}</p>
@@ -426,5 +413,41 @@ export const SideNav: React.FC = () => {
         </div>
       </div>
     </aside>
+  )
+}
+
+function NavAvatar({ userId, name, url }: { userId: string; name: string; url: string | null }) {
+  const [src, setSrc] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/media/actor/${encodeURIComponent(userId)}/headshots/tiles`, { cache: 'no-store' })
+        if (!r.ok) throw new Error('tiles fail')
+        const j = await r.json().catch(() => null)
+        const tiles = Array.isArray(j?.tiles) ? j.tiles : []
+        if (!cancelled && tiles[0]?.thumb) {
+          setSrc(String(tiles[0].thumb))
+          return
+        }
+      } catch {}
+      if (!cancelled) setSrc(url || `/api/media/avatar/safe/${encodeURIComponent(userId)}`)
+    })()
+    return () => { cancelled = true }
+  }, [userId, url])
+  const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}`
+  return (
+    <div>
+      <img
+        className="inline-block h-9 w-9 rounded-full"
+        src={src || url || fallback}
+        alt={name}
+        decoding="async"
+        onError={(e) => {
+          const el = e.currentTarget as HTMLImageElement
+          if (el.src !== fallback) el.src = fallback
+        }}
+      />
+    </div>
   )
 }

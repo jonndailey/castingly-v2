@@ -24,7 +24,8 @@ export function useSignedHeadshot(actorId?: string) {
         const data = await res.json()
         const files = Array.isArray(data?.files) ? data.files : []
         const first = files[0]
-        const u = first?.signed_url || first?.public_url || first?.url || null
+        // Prefer stable edge-cached serve URL when available
+        const u = first?.url || first?.thumbnail_url || first?.signed_url || first?.public_url || null
         if (!cancelled) setUrl(typeof u === 'string' ? u : null)
       } finally {
         if (!cancelled) setLoading(false)
@@ -36,4 +37,3 @@ export function useSignedHeadshot(actorId?: string) {
 
   return { url, loading }
 }
-
