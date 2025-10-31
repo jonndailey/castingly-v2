@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useDropzone } from 'react-dropzone'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { 
@@ -220,6 +221,12 @@ export default function ActorProfile() {
   const [profileAvatarLoaded, setProfileAvatarLoaded] = useState(false)
   const [cachedProfileAvatarUrl, setCachedProfileAvatarUrl] = useState<string | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
+  const [reorderHeadshots, setReorderHeadshots] = useState(false)
+  const [orderedHeadshots, setOrderedHeadshots] = useState<VariantTile[]>([])
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [uploadModalCategory, setUploadModalCategory] = useState<'headshot'|'gallery'|'reel'|'resume'|'self_tape'|'voice_over'|'document'|'other'>('headshot')
+  type QueueItem = { id: number; file: File; name: string; size: number; progress: number; status: 'queued'|'uploading'|'done'|'error'; error?: string }
+  const [uploadQueue, setUploadQueue] = useState<QueueItem[]>([])
   const { cacheAvatar, getCachedAvatar } = useAvatarCache()
 
   // Fast path: prefetch public small headshot tiles via lightweight API
@@ -334,6 +341,10 @@ export default function ActorProfile() {
     ? fastHeadshotTiles as any
     : headshotTilesFromMedia
   const headshotTiles: VariantTile[] = headshotTilesAll.slice(0, 20)
+
+  useEffect(() => {
+    if (!reorderHeadshots) setOrderedHeadshots(headshotTiles)
+  }, [headshotTiles, reorderHeadshots])
   
   // Initialize archetypes and training when actor data loads
   useEffect(() => {
@@ -395,10 +406,64 @@ export default function ActorProfile() {
 
   // Upload helpers
   const startUpload = useCallback((category: 'headshot' | 'gallery' | 'reel' | 'resume' | 'self_tape' | 'voice_over' | 'document' | 'other') => {
-    setPendingCategory(category)
-    const input = document.getElementById('profile-upload-input') as HTMLInputElement | null
-    input?.click()
+    setUploadModalCategory(category)
+    setShowUploadModal(true)
   }, [])
+
+  const onDropFiles = useCallback((accepted: File[]) => {
+    if (!accepted?.length) return
+    setUploadQueue((prev) => [
+      ...prev,
+      ...accepted.map((f) => ({ id: Date.now() + Math.random(), file: f, name: f.name, size: f.size, progress: 0, status: 'queued' as const }))
+    ])
+  }, [])
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop: onDropFiles, multiple: true })
+
+  const uploadNext = useCallback(async () => {
+    if (!user?.id || !token) return
+    const idx = uploadQueue.findIndex((q) => q.status === 'queued')
+    if (idx === -1) return
+    const item = uploadQueue[idx]
+    // Mark uploading
+    setUploadQueue((prev) => prev.map((q, i) => i === idx ? { ...q, status: 'uploading', progress: 0 } : q))
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', `/api/media/actor/${encodeURIComponent(String(user.id))}/upload`, true)
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const p = Math.round((e.loaded / e.total) * 100)
+            setUploadQueue((prev) => prev.map((q, i) => i === idx ? { ...q, progress: p } : q))
+          }
+        }
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve()
+          else reject(new Error(`HTTP ${xhr.status}`))
+        }
+        xhr.onerror = () => reject(new Error('network_error'))
+        const form = new FormData()
+        form.append('file', item.file)
+        form.append('title', item.name)
+        form.append('category', uploadModalCategory)
+        xhr.send(form)
+      })
+      setUploadQueue((prev) => prev.map((q, i) => i === idx ? { ...q, status: 'done', progress: 100 } : q))
+    } catch (e: any) {
+      setUploadQueue((prev) => prev.map((q, i) => i === idx ? { ...q, status: 'error', error: e?.message || 'Upload failed' } : q))
+    } finally {
+      // Kick off next in queue
+      setTimeout(() => uploadNext(), 0)
+    }
+  }, [uploadQueue, user?.id, token, uploadModalCategory])
+
+  useEffect(() => {
+    // Auto-start uploads when there is a queued item and none uploading
+    if (!uploadQueue.some((q) => q.status === 'uploading') && uploadQueue.some((q) => q.status === 'queued')) {
+      uploadNext()
+    }
+  }, [uploadQueue, uploadNext])
 
   const onFileSelected = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1266,12 +1331,32 @@ export default function ActorProfile() {
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   <span>Headshots <span className="text-xs text-gray-500">({headshotTiles.length}/10)</span></span>
-                  <span className="text-xs font-normal text-gray-500">Professional casting photos</span>
+                  <div className="flex items-center gap-2">
+                    <span className="hidden sm:inline text-xs font-normal text-gray-500">Professional casting photos</span>
+                    {!reorderHeadshots ? (
+                      <Button size="sm" variant="outline" onClick={() => setReorderHeadshots(true)}>Reorder</Button>
+                    ) : (
+                      <>
+                        <Button size="sm" variant="outline" onClick={() => { setReorderHeadshots(false); setOrderedHeadshots(headshotTiles) }}>Cancel</Button>
+                        <Button size="sm" onClick={async () => {
+                          try {
+                            if (!user?.id || !token) return
+                            const payload = { category: 'headshot', order: orderedHeadshots.map((t, i) => ({ id: t.id, order: i })) }
+                            await fetch(`/api/media/actor/${encodeURIComponent(String(user.id))}/reorder`, {
+                              method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload)
+                            })
+                            setReorderHeadshots(false)
+                            try { await fetchHeadshotTiles(String(user.id)) } catch {}
+                          } catch (e) { alert('Failed to save order') }
+                        }}>Save Order</Button>
+                      </>
+                    )}
+                  </div>
                 </CardTitle>
               </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
-                    {mediaLoading && (
+                    {mediaLoading && headshotTiles.length === 0 && (
                       Array.from({ length: 6 }).map((_, i) => (
                         <div key={`hs-skel-${i}`} className="aspect-[3/4] rounded-lg bg-gray-200 animate-pulse" />
                       ))
@@ -1282,11 +1367,30 @@ export default function ActorProfile() {
                         <div className="absolute inset-0 flex items-center justify-center text-white text-sm bg-black/20">Uploading…</div>
                       </div>
                     )}
-                    {headshotTiles.map((photo, index) => (
+                    {(reorderHeadshots ? orderedHeadshots : headshotTiles).map((photo, index) => (
                       <div
                         key={`${photo.fullSrc}-${index}`}
-                        className="aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => openImageModal(
+                        className={cn(
+                          'aspect-[3/4] relative overflow-hidden rounded-lg bg-gray-200 transition-opacity',
+                          reorderHeadshots ? 'cursor-move ring-2 ring-offset-2 ring-transparent hover:ring-primary-300' : 'cursor-pointer hover:opacity-80'
+                        )}
+                        draggable={reorderHeadshots}
+                        onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(index)) }}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          const from = parseInt(e.dataTransfer.getData('text/plain') || '-1', 10)
+                          const to = index
+                          if (Number.isFinite(from) && from >= 0 && to >= 0 && from !== to) {
+                            setOrderedHeadshots((prev) => {
+                              const next = prev.slice()
+                              const [m] = next.splice(from, 1)
+                              next.splice(to, 0, m)
+                              return next
+                            })
+                          }
+                        }}
+                        onClick={() => !reorderHeadshots && openImageModal(
                           photo.fullSrc,
                           `Headshot ${index + 1}`,
                           headshotTiles.map(g => ({ src: g.fullSrc, alt: g.alt })),
@@ -1352,7 +1456,7 @@ export default function ActorProfile() {
               </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-3">
-                    {mediaLoading && (
+                    {mediaLoading && galleryTiles.length === 0 && (
                       Array.from({ length: 6 }).map((_, i) => (
                         <div key={`gal-skel-${i}`} className="aspect-[3/4] rounded-lg bg-gray-200 animate-pulse" />
                       ))
@@ -2209,6 +2313,57 @@ export default function ActorProfile() {
           </div>
         )
       })()}
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-3xl w-full shadow-lg overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="font-semibold">Upload {uploadModalCategory === 'headshot' ? 'Headshots' : uploadModalCategory === 'gallery' ? 'Photos' : 'Media'}</div>
+              <button className="text-gray-500 hover:text-gray-700" onClick={() => { setShowUploadModal(false); setUploadQueue([]) }}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <div {...getRootProps({ className: 'border-2 border-dashed rounded-lg p-8 text-center ' + (isDragActive ? 'border-primary-400 bg-primary-50' : 'border-gray-300 bg-gray-50') })}>
+                <input {...getInputProps()} />
+                <p className="text-sm text-gray-600">Drag & drop files here, or click to select</p>
+                <p className="text-xs text-gray-400 mt-1">You can add multiple files</p>
+              </div>
+              {uploadQueue.length > 0 && (
+                <div className="mt-4 space-y-3 max-h-64 overflow-y-auto">
+                  {uploadQueue.map((q) => (
+                    <div key={q.id} className="border rounded-lg p-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="truncate mr-2">{q.name}</div>
+                        <div className="text-gray-500">{q.progress}%</div>
+                      </div>
+                      <div className="w-full h-2 bg-gray-200 rounded mt-2 overflow-hidden">
+                        <div className={cn('h-2 rounded', q.status === 'error' ? 'bg-red-500' : 'bg-primary-500')} style={{ width: `${q.progress}%` }} />
+                      </div>
+                      {q.status === 'error' && <div className="text-xs text-red-600 mt-1">{q.error || 'Upload failed'}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="mt-4 flex items-center justify-between">
+                <div className="text-xs text-gray-500">Files upload immediately with progress. Thumbnails finalize in background.</div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => { setShowUploadModal(false); setUploadQueue([]) }}>Close</Button>
+                  <Button onClick={async () => {
+                    try {
+                      if (uploadModalCategory === 'headshot' && user?.id) await fetchHeadshotTiles(String(user.id))
+                      try { reloadMedia() } catch {}
+                      setShowUploadModal(false)
+                      setUploadQueue([])
+                    } catch {}
+                  }}>Refresh Media</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   )
 }
