@@ -120,12 +120,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ actorId: s
         const large = byVar('large'); const medium = byVar('medium'); const small = byVar('small'); const thumbnail = byVar('thumbnail')
         const chooseUrl = (f: any) => {
           if (!f) return null
-          const meta = f.metadata || {}
-          const bucketId = String(meta.bucketId || meta.bucket_id || 'castingly-public')
-          const name = String(f.original_filename || f.name || '')
-          if (!name || !b) return null
-          const properPath = `actors/${String(actorId)}/headshots/`
-          return `${b}/api/serve/files/${encodeURIComponent(String(actorId))}/${bucketId}/${properPath}${encodeURIComponent(name)}`
+          // Prefer DMAPI-provided URLs to avoid broken /api/serve redirects
+          return f.public_url || f.url || f.signed_url || null
         }
         const thumb = chooseUrl(small) || chooseUrl(thumbnail) || chooseUrl(medium) || chooseUrl(original) || chooseUrl(large)
         const full = chooseUrl(original) || chooseUrl(large) || chooseUrl(medium) || chooseUrl(small) || chooseUrl(thumbnail)

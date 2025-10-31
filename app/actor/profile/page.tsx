@@ -138,23 +138,26 @@ export default function ActorProfile() {
         } else {
           // Fallback to regular loading with timeout
           const avatarImg = new Image()
-          avatarImg.crossOrigin = 'anonymous'
+          // Only set crossOrigin for same-origin URLs to avoid CORS errors
+          try {
+            const u = new URL(currentAvatarUrl, window.location.origin)
+            if (u.origin === window.location.origin) {
+              avatarImg.crossOrigin = 'anonymous'
+            }
+          } catch {}
           avatarImg.src = currentAvatarUrl
           avatarImg.onload = () => {
-            console.log('Profile avatar loaded via fallback:', currentAvatarUrl.substring(0, 60) + '...')
+            // loaded
             setProfileAvatarLoaded(true)
           }
           avatarImg.onerror = () => {
-            console.warn('Profile avatar loading failed, showing anyway')
+            // ignore error and show fallback
             setProfileAvatarLoaded(true)
           }
           
           // Show after 1 second for better UX
           setTimeout(() => {
-            if (!profileAvatarLoaded) {
-              console.log('Profile avatar timeout, showing image')
-              setProfileAvatarLoaded(true)
-            }
+            if (!profileAvatarLoaded) setProfileAvatarLoaded(true)
           }, 1000)
         }
       } catch (error) {
@@ -453,8 +456,7 @@ export default function ActorProfile() {
     } catch (e: any) {
       setUploadQueue((prev) => prev.map((q, i) => i === idx ? { ...q, status: 'error', error: e?.message || 'Upload failed' } : q))
     } finally {
-      // Kick off next in queue
-      setTimeout(() => uploadNext(), 0)
+      // Do not chain here; the effect watcher starts the next queued upload to avoid double starts
     }
   }, [uploadQueue, user?.id, token, uploadModalCategory])
 
@@ -848,13 +850,12 @@ export default function ActorProfile() {
                           const safeAvatarUrl = (avatarUrl && !isRawUrl(avatarUrl)) ? avatarUrl : null
                           const fallbackUrl = `/api/media/avatar/safe/${encodeURIComponent(String(actorData?.id || user?.id || ''))}`
                           
-                          // Add cache buster to ensure fresh images
+                          // Add a stable cache buster tied to profile updated_at to avoid flicker
+                          const updatedAtTs = (() => { try { return Date.parse(String((actorData as any)?.updated_at || '')) || 0 } catch { return 0 } })()
                           const addCacheBuster = (url: string) => {
-                            if (url.includes('?')) {
-                              return url + '&v=' + Date.now()
-                            } else {
-                              return url + '?v=' + Date.now()
-                            }
+                            if (!updatedAtTs) return url
+                            const sep = url.includes('?') ? '&' : '?'
+                            return `${url}${sep}u=${updatedAtTs}`
                           }
                           
                           let finalUrl = cachedProfileAvatarUrl || headshotTiles?.[0]?.thumbSrc || safeAvatarUrl || fallbackUrl

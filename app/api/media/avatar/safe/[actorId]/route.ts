@@ -64,18 +64,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
         }
         let chosen: any = smalls.length ? chooseNewestByTs(smalls) : chooseNewestByTs(files)
         if (!chosen) chosen = files[0]
-        // Prefer stable DMAPI /api/serve for public bucket
-        let direct = chosen?.public_url || chosen?.url || chosen?.signed_url || null
-        try {
-          const objName = String(chosen?.name || '').trim()
-          if (objName) {
-            const base = (process.env.DMAPI_BASE_URL || process.env.NEXT_PUBLIC_DMAPI_BASE_URL || '').replace(/\/$/, '')
-            if (base) {
-              const tail = `actors/${actorId}/headshots/`
-              direct = `${base}/api/serve/files/${encodeURIComponent(String(actorId))}/castingly-public/${tail}${encodeURIComponent(objName)}`
-            }
-          }
-        } catch {}
+        // Prefer direct DMAPI-provided URL to avoid broken /api/serve redirects
+        const direct = chosen?.public_url || chosen?.url || chosen?.signed_url || null
         if (direct) {
           try {
             const namePart = String(chosen?.name || '')

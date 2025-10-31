@@ -9,33 +9,26 @@ function baseUrl(): string | null {
   return b.replace(/\/$/, '')
 }
 
-function pickTiles(files: Array<{ name?: string; path?: string }>, actorId: string): Tile[] {
-  const b = baseUrl()
-  if (!b) return []
-  const groups = new Map<string, { small?: string; medium?: string; large?: string; thumbnail?: string; original?: string; baseName: string; path: string }>()
-  const serve = (userId: string, folderPath: string, name: string) => `${b}/api/serve/files/${encodeURIComponent(String(userId))}/castingly-public/${folderPath ? `${folderPath.replace(/^\/+|\/+$/g, '')}/` : ''}${encodeURIComponent(name)}`
+function pickTiles(files: Array<any>, actorId: string): Tile[] {
+  const groups = new Map<string, { small?: any; medium?: any; large?: any; thumbnail?: any; original?: any; baseName: string }>()
   for (const f of files) {
     const name = String(f?.name || '')
     if (!name) continue
-    const rawPath = String(f?.path || '')
-    const p1 = rawPath.replace(/^files\/[a-f0-9-]+\/castingly-public\//i, '')
-    const p2 = p1.replace(new RegExp(`^${actorId}/`), '')
-    const path = p2
     const lower = name.toLowerCase()
     if (!/\.(jpe?g|png|webp)$/i.test(lower)) continue
     const m = lower.match(/^(.*?)(?:_(large|medium|small|thumbnail))?(\.[^.]+)$/)
     const base = m ? m[1] : lower.replace(/\.[^.]+$/, '')
     const variant = (m && (m[2] as 'large'|'medium'|'small'|'thumbnail'|null)) || null
-    if (!groups.has(base)) groups.set(base, { baseName: base, path })
+    if (!groups.has(base)) groups.set(base, { baseName: base })
     const g = groups.get(base)!
-    const url = serve(actorId, path, name)
-    if (!variant) g.original = url
-    else g[variant] = url as any
+    if (!variant) g.original = f
+    else g[variant] = f as any
   }
   const tiles: Tile[] = []
   for (const [, g] of groups) {
-    const thumb = g.small || g.thumbnail || g.medium || g.original || g.large
-    const full = g.original || g.large || g.medium || g.small || g.thumbnail
+    const pickUrl = (x?: any) => x ? (x.public_url || x.url || x.signed_url || null) : null
+    const thumb = pickUrl(g.small) || pickUrl(g.thumbnail) || pickUrl(g.medium) || pickUrl(g.original) || pickUrl(g.large)
+    const full = pickUrl(g.original) || pickUrl(g.large) || pickUrl(g.medium) || pickUrl(g.small) || pickUrl(g.thumbnail)
     if (thumb && full) tiles.push({ thumb, full, name: g.baseName })
   }
   return tiles

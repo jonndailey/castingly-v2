@@ -48,11 +48,17 @@ class AvatarCache {
       // Check if already cached and fresh
       const cached = await this.getCachedAvatar(userId, variant)
       if (cached && cached.originalUrl === imageUrl) {
-        console.log(`Avatar cache hit (${variant}):`, userId)
+        // cache hit
         return cached.url
       }
 
-      console.log(`Caching avatar (${variant}) for user:`, userId)
+      // Skip cross-origin images to avoid CORS errors
+      try {
+        const u = new URL(imageUrl, window.location.origin)
+        if (u.origin !== window.location.origin) {
+          return null
+        }
+      } catch {}
       
       // Fetch the image
       const response = await fetch(imageUrl)
@@ -80,11 +86,11 @@ class AvatarCache {
         request.onerror = () => reject(request.error)
       })
       
-      console.log(`Avatar cached successfully (${variant}):`, objectUrl.substring(0, 60) + '...')
+      // cached
       return objectUrl
       
     } catch (error) {
-      console.error('Failed to cache avatar:', error)
+      // suppress noisy failures in prod; return null gracefully
       return null
     }
   }
