@@ -204,6 +204,33 @@ ssh dev 'bash -lc "cd ~/apps/castingly-v2 && npm run build && pm2 restart castin
 ```
 ssh dev 'bash -lc "cd ~/apps/castingly-v2 && TO=you@example.com node tools/sendgrid-test.mjs"'
 ```
+
+### Provision Beta Actors (Core + Castingly DB)
+
+Create/activate users in Dailey Core under the `castingly` tenant, enroll in tenant apps, and ensure public actor profiles exist in the Castingly DB (so /api/actors and /talent routes work pre-login).
+
+1) Run provisioning in production env:
+
+```
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && MIGRATION_ENV=.env.production node tools/provision-beta-actors.mjs --dry"'
+# if output looks good, apply (creates users + DB rows):
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && MIGRATION_ENV=.env.production node tools/provision-beta-actors.mjs"'
+```
+
+Outputs passwords CSV for emailing: `artifacts/provision/beta-actors-passwords.csv`.
+
+2) Send the welcome email (test first):
+
+```
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && export SENDGRID_API_KEY=*** SENDGRID_FROM_EMAIL=noreply@castingly.com SENDGRID_FROM_NAME=Castingly && node tools/send-welcome-castingly.mjs"'
+# Sends to jonny@dailey.llc by default (TEST_ONLY)
+```
+
+3) Send to all recipients (requires passwords CSV):
+
+```
+ssh dev 'bash -lc "cd ~/apps/castingly-v2 && export SENDGRID_API_KEY=*** SENDGRID_FROM_EMAIL=noreply@castingly.com SENDGRID_FROM_NAME=Castingly ALL=1 node tools/send-welcome-castingly.mjs"'
+```
 ### Media: Broken Image Swaps / Cleanup
 
 Detect if a good `/api/serve` image is replaced by a raw S3/OVH URL after login:

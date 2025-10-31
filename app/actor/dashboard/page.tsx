@@ -93,7 +93,13 @@ export default function ActorDashboard() {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [hideCompletion, setHideCompletion] = React.useState<boolean>(false)
   const [cachedAvatarUrl, setCachedAvatarUrl] = React.useState<string | null>(null)
+  const [stableAvatarUrl, setStableAvatarUrl] = React.useState<string | null>(null)
+  const avatarLoadedRef = React.useRef(false)
+  const cacheInitializedRef = React.useRef(false)
+  const previousProfileBase = React.useRef<string | null>(null)
+  const previousUserBase = React.useRef<string | null>(null)
   const { cacheAvatar, cacheAvatarFromBlob, getCachedAvatar, removeCachedAvatar } = useAvatarCache()
+  const transparentPixel = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
 
   useEffect(() => {
     if (profile?.preferences?.hideProfileCompletion) {
@@ -101,19 +107,22 @@ export default function ActorDashboard() {
     }
   }, [profile?.preferences?.hideProfileCompletion])
 
-  // Avatar caching and preloading strategy for instant loading
+  // Avatar caching - load once per mount
   useEffect(() => {
     const userId = String(profile?.id || user?.id || '')
-    if (!userId || isUploading) return
+    if (!userId || isUploading || cacheInitializedRef.current) return
+    
+    cacheInitializedRef.current = true
 
     const loadAvatar = async () => {
       try {
-        // First check cache for instant loading
+        // Check cache first for instant loading
         const cached = await getCachedAvatar(userId)
         if (cached) {
-          console.log('Avatar loaded from cache instantly:', cached.url.substring(0, 60) + '...')
+          console.log('Avatar loaded from cache instantly')
           setCachedAvatarUrl(cached.url)
           setAvatarLoaded(true)
+          avatarLoadedRef.current = true
           return
         }
 
@@ -121,48 +130,51 @@ export default function ActorDashboard() {
         const avatarApiUrl = `/api/media/avatar/safe/${encodeURIComponent(userId)}`
         const currentAvatarUrl = stableAvatarUrl || profile?.avatar_url || user?.avatar_url || avatarApiUrl
 
-        // Preload and cache the image
+        // Try to cache the image
         const cachedUrl = await cacheAvatar(userId, currentAvatarUrl)
         if (cachedUrl) {
-          console.log('Avatar cached and ready:', cachedUrl.substring(0, 60) + '...')
+          console.log('Avatar cached and ready')
           setCachedAvatarUrl(cachedUrl)
           setAvatarLoaded(true)
+          avatarLoadedRef.current = true
         } else {
-          // Fallback to regular loading with timeout
-          const avatarImg = new Image()
-          avatarImg.crossOrigin = 'anonymous'
-          avatarImg.src = currentAvatarUrl
-          avatarImg.onload = () => {
-            console.log('Avatar loaded via fallback:', currentAvatarUrl.substring(0, 60) + '...')
-            setAvatarLoaded(true)
-          }
-          avatarImg.onerror = () => {
-            console.warn('Avatar loading failed, showing anyway')
-            setAvatarLoaded(true)
-          }
-          
-          // Show after 1 second for better UX
-          setTimeout(() => {
-            if (!avatarLoaded) {
-              console.log('Avatar timeout, showing image')
-              setAvatarLoaded(true)
-            }
-          }, 1000)
+          // Fallback without caching
+          setAvatarLoaded(true)
+          avatarLoadedRef.current = true
         }
       } catch (error) {
-        console.error('Avatar caching failed:', error)
-        setAvatarLoaded(true) // Show anyway
+        console.error('Avatar caching error:', error)
+        setAvatarLoaded(true)
+        avatarLoadedRef.current = true
       }
     }
 
     loadAvatar()
-  }, [profile?.id, user?.id, stableAvatarUrl, profile?.avatar_url, user?.avatar_url, isUploading, getCachedAvatar, cacheAvatar, avatarLoaded])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, user?.id])
 
-  // Reset avatar loading state when avatar URL changes
+  // Reset avatar loading state when profile changes (but not stableAvatarUrl to avoid loops)
   useEffect(() => {
-    setAvatarLoaded(false)
-    setCachedAvatarUrl(null) // Clear cached URL when avatar changes
-  }, [profile?.avatar_url, user?.avatar_url, stableAvatarUrl])
+    // Extract base URL without query params for comparison
+    const getBaseUrl = (url: string | undefined | null) => {
+      if (!url) return null
+      return url.split('?')[0]
+    }
+    
+    const profileBase = getBaseUrl(profile?.avatar_url)
+    const userBase = getBaseUrl(user?.avatar_url)
+    
+    // Only reset if the base URL actually changed (not just timestamp)
+    if (previousProfileBase.current !== profileBase || previousUserBase.current !== userBase) {
+      previousProfileBase.current = profileBase
+      previousUserBase.current = userBase
+      
+      setAvatarLoaded(false)
+      setCachedAvatarUrl(null) // Clear cached URL when avatar changes
+      avatarLoadedRef.current = false // Reset ref to allow reloading
+      cacheInitializedRef.current = false // Reset cache init to allow re-caching
+    }
+  }, [profile?.avatar_url, user?.avatar_url])
 
   const handleAvatarUpload = async (file: File) => {
     // Validate file size (max 10MB)
@@ -237,7 +249,9 @@ export default function ActorDashboard() {
       const uploadResult = await res.json().catch(() => null)
       console.log('Upload successful:', uploadResult)
       
-      setUploadProgress('Saving changes...')
+      setUploadProgress('Uploaded! Finalizing…')
+      // Remove blocking overlay now that upload finished; finalize in background
+      setIsUploading(false)
       // Add timestamp to force cache refresh
       const safeAvatar = `/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}?t=${Date.now()}`
       const profileRes = await fetch(`/api/actors/${encodeURIComponent(String(actorIdForPatch))}/profile`, {
@@ -255,7 +269,7 @@ export default function ActorDashboard() {
         throw new Error(`Profile update failed: ${profileRes.status}`)
       }
       
-      // Force update with cache-busted URL
+      // Update with cache-busted safe URL (will be quickly replaced by tile)
       setStableAvatarUrl(safeAvatar)
       setUploadProgress('Upload complete!')
       
@@ -292,16 +306,13 @@ export default function ActorDashboard() {
         console.error('Profile refresh failed:', e)
       }
       
-      // Clear upload state after brief success message
+      // Clear transient state after brief success message
       setTimeout(() => {
-        setIsUploading(false)
         setUploadProgress('')
-        // Clean up preview
         URL.revokeObjectURL(preview)
         setLocalAvatar(null)
-        // Keep the timestamped URL to ensure fresh image
         setStableAvatarUrl(`/api/media/avatar/safe/${encodeURIComponent(String(actorIdForPatch))}?t=${Date.now()}`)
-      }, 2000)
+      }, 1200)
     } catch (e) {
       // Clear timeout on error
       clearTimeout(uploadTimeout)
@@ -335,10 +346,11 @@ export default function ActorDashboard() {
     }
   }, [user, router])
   
-  // Build a safe avatar URL as final fallback
-  const safeAvatarHref = user ? `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}` : ''
-  // Use a stable avatar source that doesn't change after loading
-  const [stableAvatarUrl, setStableAvatarUrl] = React.useState<string | null>(null)
+  // Build a safe avatar URL as final fallback. Include a stable cache key tied to profile update time
+  const profileUpdatedAt = (profile as any)?.updated_at ? new Date((profile as any).updated_at).getTime() : undefined
+  const safeAvatarHref = user
+    ? `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}` + (profileUpdatedAt ? `?u=${profileUpdatedAt}` : '')
+    : ''
   
   React.useEffect(() => {
     if (!user?.id) return
@@ -354,29 +366,27 @@ export default function ActorDashboard() {
     
     // Skip tile fetching if we're uploading or have a local preview
     if (isUploading || localAvatar) return
-    
+
+    // Always try to fetch small headshot tiles quickly and prefer them over the safe fallback
     ;(async () => {
       try {
         const r = await fetch(`/api/media/actor/${encodeURIComponent(id)}/headshots/tiles?ts=${Date.now()}`, { cache: 'no-store' })
-        if (!r.ok) return
+        if (!r.ok || aborted) return
         const j = await r.json().catch(() => null)
         if (!j || aborted) return
         const tiles = Array.isArray(j.tiles) ? j.tiles : []
-        // Update to use actual headshot if available (prioritize over safe endpoint)
-        if (tiles.length > 0 && tiles[0]?.thumb && !localAvatar) {
-          const currentUrl = tiles[0].thumb
+        if (tiles.length > 0 && tiles[0]?.thumb && !aborted && !localAvatar) {
+          const candidate = String(tiles[0].thumb)
           const currentBase = stableAvatarUrl?.split('?')[0]
-          const newBase = currentUrl.split('?')[0]
-          
-          // Only update if we have a different base URL
+          const newBase = candidate.split('?')[0]
           if (currentBase !== newBase) {
-            setStableAvatarUrl(currentUrl)
+            setStableAvatarUrl(candidate)
           }
         }
       } catch {}
     })()
     return () => { aborted = true }
-  }, [user?.id, localAvatar, isUploading])
+  }, [user?.id, localAvatar, isUploading, stableAvatarUrl])
 
   if (!user) return null
 
@@ -522,10 +532,10 @@ export default function ActorDashboard() {
                       src={
                         localAvatar ||
                         cachedAvatarUrl ||
-                        stableAvatarUrl ||
                         profile.avatar_url ||
+                        stableAvatarUrl ||
                         user?.avatar_url ||
-                        safeAvatarHref
+                        transparentPixel
                       }
                       loading="eager"
                       fetchPriority="high"

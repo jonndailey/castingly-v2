@@ -100,26 +100,13 @@ export async function GET(request: NextRequest, context: { params: Promise<{ act
               } catch {}
             }
           } catch {}
-          try {
-            const resp = await fetch(direct)
-            const hdrs = new Headers(resp.headers)
-            // Use appropriate cache headers based on whether this is a fresh upload
-            if (timestamp) {
-              hdrs.set('Cache-Control', 'no-cache, no-store, must-revalidate')
-              hdrs.set('Pragma', 'no-cache')
-              hdrs.set('Expires', '0')
-            } else {
-              hdrs.set('Cache-Control', 'public, max-age=31536000, immutable')
-            }
-            return new Response(await resp.arrayBuffer(), { status: 200, headers: hdrs })
-          } catch {
-            const redirectHeaders = new Headers()
-            redirectHeaders.set('Location', direct)
-            Object.entries(cacheHeaders).forEach(([key, value]) => {
-              redirectHeaders.set(key, value)
-            })
-            return new Response(null, { status: 302, headers: redirectHeaders })
-          }
+          // Prefer a fast redirect to the edge-cached DMAPI /api/serve asset
+          const redirectHeaders = new Headers()
+          redirectHeaders.set('Location', direct)
+          Object.entries(cacheHeaders).forEach(([key, value]) => {
+            redirectHeaders.set(key, value)
+          })
+          return new Response(null, { status: 302, headers: redirectHeaders })
         }
       }
     } catch {}

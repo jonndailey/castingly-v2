@@ -26,6 +26,10 @@ async function main() {
     from: { email: FROM_EMAIL, name: FROM_NAME },
     subject: 'Welcome to Castingly',
     html,
+    trackingSettings: {
+      clickTracking: { enable: false, enableText: false },
+      openTracking: { enable: false }
+    }
   }
   const [resp] = await sgMail.send(msg)
   console.log('Sent:', resp.statusCode, resp.headers['x-message-id'] || '')

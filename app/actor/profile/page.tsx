@@ -43,6 +43,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { ForumActivityPanel } from '@/components/forum/forum-activity-panel'
 import useAuthStore from '@/lib/store/auth-store'
 import { useActorProfile, useActorMedia, type ActorMediaEntry } from '@/lib/hooks/useActorData'
+import { useAvatarCache } from '@/lib/utils/avatar-cache'
 // import { useSignedHeadshot } from '@/lib/hooks/useSignedHeadshot'
 
 // Mock data for the profile
@@ -107,32 +108,68 @@ export default function ActorProfile() {
   const { profile: actorData, loading, error, refresh: refreshProfile } = useActorProfile(user?.id)
   const { media, loading: mediaLoading, reload: reloadMedia } = useActorMedia(user?.id)
 
-  // Add preload hints for faster avatar loading
+  // Avatar caching and preloading strategy for instant loading
   useEffect(() => {
     const userId = String(actorData?.id || user?.id || '')
     if (!userId) return
 
-    // Create preload link for avatar API endpoint
-    const avatarApiUrl = `/api/media/avatar/safe/${encodeURIComponent(userId)}`
-    const preloadLink = document.createElement('link')
-    preloadLink.rel = 'preload'
-    preloadLink.href = avatarApiUrl
-    preloadLink.as = 'image'
-    preloadLink.setAttribute('fetchpriority', 'high')
-    document.head.appendChild(preloadLink)
+    const loadProfileAvatar = async () => {
+      try {
+        // First check cache for instant loading
+        const cached = await getCachedAvatar(userId)
+        if (cached) {
+          console.log('Profile avatar loaded from cache instantly:', cached.url.substring(0, 60) + '...')
+          setCachedProfileAvatarUrl(cached.url)
+          setProfileAvatarLoaded(true)
+          return
+        }
 
-    // Cleanup function
-    return () => {
-      if (document.head.contains(preloadLink)) {
-        document.head.removeChild(preloadLink)
+        // Build avatar URL
+        const avatarApiUrl = `/api/media/avatar/safe/${encodeURIComponent(userId)}`
+        const currentAvatarUrl = actorData?.avatar_url || avatarApiUrl
+
+        // Preload and cache the image
+        const cachedUrl = await cacheAvatar(userId, currentAvatarUrl)
+        if (cachedUrl) {
+          console.log('Profile avatar cached and ready:', cachedUrl.substring(0, 60) + '...')
+          setCachedProfileAvatarUrl(cachedUrl)
+          setProfileAvatarLoaded(true)
+        } else {
+          // Fallback to regular loading with timeout
+          const avatarImg = new Image()
+          avatarImg.crossOrigin = 'anonymous'
+          avatarImg.src = currentAvatarUrl
+          avatarImg.onload = () => {
+            console.log('Profile avatar loaded via fallback:', currentAvatarUrl.substring(0, 60) + '...')
+            setProfileAvatarLoaded(true)
+          }
+          avatarImg.onerror = () => {
+            console.warn('Profile avatar loading failed, showing anyway')
+            setProfileAvatarLoaded(true)
+          }
+          
+          // Show after 1 second for better UX
+          setTimeout(() => {
+            if (!profileAvatarLoaded) {
+              console.log('Profile avatar timeout, showing image')
+              setProfileAvatarLoaded(true)
+            }
+          }, 1000)
+        }
+      } catch (error) {
+        console.error('Profile avatar caching failed:', error)
+        setProfileAvatarLoaded(true) // Show anyway
       }
     }
-  }, [actorData?.id, user?.id])
+
+    loadProfileAvatar()
+  }, [actorData?.id, user?.id, actorData?.avatar_url])
 
   // Reset avatar loading state when the avatar URL changes
   useEffect(() => {
     setProfileAvatarLoaded(false)
-  }, [actorData?.avatar_url, headshotTiles])
+    setCachedProfileAvatarUrl(null) // Clear cached URL when avatar changes
+  }, [actorData?.avatar_url])
   
   const deleteMediaFile = async (fileId: string) => {
     if (!user?.id || !token || !fileId) return
@@ -177,6 +214,8 @@ export default function ActorProfile() {
   const [fastHeadshotTiles, setFastHeadshotTiles] = useState<Array<{ thumbSrc: string; fullSrc: string; alt: string }>>([])
   const [fastGalleryTiles, setFastGalleryTiles] = useState<Array<{ thumbSrc: string; fullSrc: string; alt: string }>>([])
   const [profileAvatarLoaded, setProfileAvatarLoaded] = useState(false)
+  const [cachedProfileAvatarUrl, setCachedProfileAvatarUrl] = useState<string | null>(null)
+  const { cacheAvatar, getCachedAvatar } = useAvatarCache()
 
   // Fast path: prefetch public small headshot tiles via lightweight API
   const fetchHeadshotTiles = useCallback(async (id: string) => {
@@ -408,6 +447,8 @@ export default function ActorProfile() {
         const j = await res.json().catch(() => ({}))
         throw new Error(j.error || 'Upload failed')
       }
+      // Mark completed immediately; finalize in background
+      setUploading(false)
       setUploadMessage(`✓ ${file.name} uploaded successfully`)
       setTimeout(() => setUploadMessage(''), 2500)
       // Refresh client media and tiles immediately to reflect new headshot
@@ -440,7 +481,6 @@ export default function ActorProfile() {
       setUploadMessage('')
       alert(err?.message || 'Upload failed. Please try again.')
     } finally {
-      setUploading(false)
       // Clear preview after refresh has likely pulled new media
       setTimeout(() => setUploadPreviewUrl(null), 4000)
     }
@@ -721,10 +761,10 @@ export default function ActorProfile() {
                             }
                           }
                           
-                          let finalUrl = headshotTiles?.[0]?.thumbSrc || safeAvatarUrl || fallbackUrl
+                          let finalUrl = cachedProfileAvatarUrl || headshotTiles?.[0]?.thumbSrc || safeAvatarUrl || fallbackUrl
                           
-                          // Only add cache buster to our API endpoints, not external services
-                          if (finalUrl.includes('/api/')) {
+                          // Only add cache buster to our API endpoints, not external services (but not cached URLs)
+                          if (finalUrl.includes('/api/') && !finalUrl.startsWith('blob:')) {
                             finalUrl = addCacheBuster(finalUrl)
                           }
                           
@@ -1216,6 +1256,7 @@ export default function ActorProfile() {
                       </div>
                     ))}
                     <button
+                      data-testid="upload-headshot"
                       onClick={() => startUpload('headshot')}
                       disabled={uploading || headshotTiles.length >= 10}
                       className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-2 hover:border-primary-400 hover:bg-primary-50/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1290,6 +1331,7 @@ export default function ActorProfile() {
                       </div>
                     ))}
                     <button
+                      data-testid="upload-gallery"
                       onClick={() => startUpload('gallery')}
                       disabled={uploading || galleryTiles.length >= 20}
                       className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-2 hover:border-primary-400 hover:bg-primary-50/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1340,6 +1382,7 @@ export default function ActorProfile() {
                       )
                     })}
                     <Button 
+                      data-testid="upload-reel"
                       variant="outline" 
                       fullWidth 
                       disabled={uploading} 
@@ -1383,6 +1426,7 @@ export default function ActorProfile() {
                       )
                     })}
                     <Button 
+                      data-testid="upload-self_tape"
                       variant="outline" 
                       fullWidth 
                       disabled={uploading} 
@@ -1425,6 +1469,7 @@ export default function ActorProfile() {
                       )
                     })}
                     <Button 
+                      data-testid="upload-voice_over"
                       variant="outline" 
                       fullWidth 
                       disabled={uploading} 
@@ -1468,6 +1513,7 @@ export default function ActorProfile() {
                       )
                     })}
                     <Button 
+                      data-testid="upload-resume"
                       variant="outline" 
                       fullWidth 
                       disabled={uploading} 
@@ -1505,7 +1551,7 @@ export default function ActorProfile() {
                         </div>
                       )
                     })}
-                    <Button variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('document')}>
+                    <Button data-testid="upload-document" variant="outline" fullWidth disabled={uploading} onClick={() => startUpload('document')}>
                       <Upload className="w-4 h-4 mr-2" /> Upload Document
                     </Button>
                   </div>
