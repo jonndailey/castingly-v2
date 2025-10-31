@@ -186,6 +186,10 @@ export default function ActorProfile() {
     }
   }
   const [isEditing, setIsEditing] = useState(false)
+  // Per-section edit toggles for improved UX
+  const [editExperience, setEditExperience] = useState(false)
+  const [editTraining, setEditTraining] = useState(false)
+  const [editArchetypes, setEditArchetypes] = useState(false)
   const [edit, setEdit] = useState<{ phone?: string; location?: string; website?: string; instagram?: string; twitter?: string; bio?: string; resume_url?: string; height?: string; eye_color?: string; hair_color?: string; age_range?: string; forum_display_name?: string; forum_signature?: string; archetypes?: string[]; training?: Array<{institution: string; year: string; focus: string}> }>({})
   const [saveMessage, setSaveMessage] = useState<string>('')
   const [skillsInput, setSkillsInput] = useState('')
@@ -633,6 +637,10 @@ export default function ActorProfile() {
   }
   
   const profileCompletion = actorData.profile_completion || 0
+  // Derived section edit flags (global edit also enables controls)
+  const canEditExperience = isEditing || editExperience
+  const canEditTraining = isEditing || editTraining
+  const canEditArchetypes = isEditing || editArchetypes
   
   const tabs = [
     { id: 'overview', label: 'Overview' },
@@ -1569,13 +1577,29 @@ export default function ActorProfile() {
             >
               <Card>
                 <CardHeader>
-                  <CardTitle>Professional Experience</CardTitle>
-                  <CardDescription>Film, TV, Theater, and Commercial work</CardDescription>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <CardTitle>Professional Experience</CardTitle>
+                      <CardDescription>Film, TV, Theater, and Commercial work</CardDescription>
+                    </div>
+                    <div className="shrink-0">
+                      <Button size="sm" variant={canEditExperience ? 'default' : 'outline'} onClick={() => {
+                        if (canEditExperience) {
+                          setEditExperience(false)
+                          handleSave()
+                        } else {
+                          setEditExperience(true)
+                        }
+                      }}>
+                        {canEditExperience ? (<><Save className="w-4 h-4 mr-1"/>Save</>) : (<><Edit className="w-4 h-4 mr-1"/>Edit</>)}
+                      </Button>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     <p className="text-gray-600">Experience details will be added in a future update.</p>
-                    {isEditing && (
+                    {canEditExperience && (
                       <Button variant="outline" fullWidth>
                         <Plus className="w-4 h-4 mr-2" />
                         Add Experience
@@ -1596,11 +1620,25 @@ export default function ActorProfile() {
             >
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <GraduationCap className="w-5 h-5" />
-                    Training & Education
-                  </CardTitle>
-                  <CardDescription>Your acting education and specialized training</CardDescription>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <GraduationCap className="w-5 h-5" />
+                      <CardTitle>Training & Education</CardTitle>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-2">
+                      <CardDescription className="hidden sm:block">Your acting education and specialized training</CardDescription>
+                      <Button size="sm" variant={canEditTraining ? 'default' : 'outline'} onClick={() => {
+                        if (canEditTraining) {
+                          setEditTraining(false)
+                          handleSave()
+                        } else {
+                          setEditTraining(true)
+                        }
+                      }}>
+                        {canEditTraining ? (<><Save className="w-4 h-4 mr-1"/>Save</>) : (<><Edit className="w-4 h-4 mr-1"/>Edit</>)}
+                      </Button>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
@@ -1632,7 +1670,7 @@ export default function ActorProfile() {
                                 </div>
                               </div>
                             </div>
-                            {isEditing && (
+                            {canEditTraining && (
                               <button
                                 onClick={() => {
                                   setTrainingEntries(prev => prev.filter(e => e.id !== entry.id))
@@ -1650,14 +1688,14 @@ export default function ActorProfile() {
                       <div className="text-center py-8">
                         <GraduationCap className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                         <p className="text-gray-500 text-sm">No training entries added yet</p>
-                        {isEditing && (
+                        {canEditTraining && (
                           <p className="text-gray-400 text-xs mt-1">Click the button below to add your training</p>
                         )}
                       </div>
                     )}
                     
                     {/* Add training button/form */}
-                    {isEditing && (
+                    {canEditTraining && (
                       <>
                         {!showTrainingForm ? (
                           <Button
@@ -1801,10 +1839,26 @@ export default function ActorProfile() {
             >
               <Card>
                 <CardHeader>
-                  <CardTitle>Character Archetypes</CardTitle>
-                  <CardDescription>
-                    Select up to 3 archetypes that best represent your casting type
-                  </CardDescription>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <CardTitle>Character Archetypes</CardTitle>
+                      <CardDescription>
+                        Select up to 3 archetypes that best represent your casting type
+                      </CardDescription>
+                    </div>
+                    <div className="shrink-0">
+                      <Button size="sm" variant={canEditArchetypes ? 'default' : 'outline'} onClick={() => {
+                        if (canEditArchetypes) {
+                          setEditArchetypes(false)
+                          handleSave()
+                        } else {
+                          setEditArchetypes(true)
+                        }
+                      }}>
+                        {canEditArchetypes ? (<><Save className="w-4 h-4 mr-1"/>Save</>) : (<><Edit className="w-4 h-4 mr-1"/>Edit</>)}
+                      </Button>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {/* Introduction text */}
@@ -1830,12 +1884,12 @@ export default function ActorProfile() {
                             isSelected
                               ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                               : 'border-gray-200 dark:border-gray-700',
-                            isEditing && !isSelected && selectedArchetypes.length < 3 && 'hover:border-primary-300 cursor-pointer',
-                            !isEditing && 'cursor-default',
-                            isEditing && !isSelected && selectedArchetypes.length >= 3 && 'opacity-50'
+                            canEditArchetypes && !isSelected && selectedArchetypes.length < 3 && 'hover:border-primary-300 cursor-pointer',
+                            !canEditArchetypes && 'cursor-default',
+                            canEditArchetypes && !isSelected && selectedArchetypes.length >= 3 && 'opacity-50'
                           )}
                           onClick={() => {
-                            if (!isEditing) return
+                            if (!canEditArchetypes) return
                             if (isSelected) {
                               setSelectedArchetypes(prev => prev.filter(a => a !== archetype.id))
                             } else if (selectedArchetypes.length < 3) {
@@ -1911,7 +1965,7 @@ export default function ActorProfile() {
                           </div>
                         )}
                       </div>
-                      {isEditing && selectedArchetypes.length > 0 && (
+                      {canEditArchetypes && selectedArchetypes.length > 0 && (
                         <button
                           onClick={() => setSelectedArchetypes([])}
                           className="text-xs text-gray-500 hover:text-gray-700"
