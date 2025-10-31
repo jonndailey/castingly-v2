@@ -219,6 +219,7 @@ export default function ActorProfile() {
   const [fastGalleryTiles, setFastGalleryTiles] = useState<Array<{ thumbSrc: string; fullSrc: string; alt: string }>>([])
   const [profileAvatarLoaded, setProfileAvatarLoaded] = useState(false)
   const [cachedProfileAvatarUrl, setCachedProfileAvatarUrl] = useState<string | null>(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
   const { cacheAvatar, getCachedAvatar } = useAvatarCache()
 
   // Fast path: prefetch public small headshot tiles via lightweight API
@@ -657,22 +658,44 @@ export default function ActorProfile() {
         subtitle="Manage your professional acting profile"
         actions={
           <div className="flex gap-2">
-            <Button
-              onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
-              variant={isEditing ? 'default' : 'outline'}
-            >
-              {isEditing ? (
-                <>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Changes
-                </>
-              ) : (
-                <>
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit Profile
-                </>
-              )}
-            </Button>
+            {isEditing ? (
+              <>
+                <Button onClick={() => handleSave()} variant="default">
+                  <Save className="w-4 h-4 mr-2" /> Save Changes
+                </Button>
+                <Button
+                  onClick={() => {
+                    setIsEditing(false)
+                    setEdit({
+                      phone: actorData.phone || '',
+                      location: actorData.location || '',
+                      website: (actorData as any).website || '',
+                      instagram: (actorData as any).instagram || '',
+                      twitter: (actorData as any).twitter || '',
+                      bio: actorData.bio || '',
+                      resume_url: actorData.resume_url || '',
+                      height: actorData.height || '',
+                      eye_color: actorData.eye_color || '',
+                      hair_color: actorData.hair_color || '',
+                      age_range: actorData.age_range || '',
+                      forum_display_name: (actorData as any).forum_display_name || '',
+                      forum_signature: (actorData as any).forum_signature || '',
+                    })
+                    setPendingSkills(Array.isArray(actorData.skills) ? actorData.skills : [])
+                    if ((actorData as any).training) setTrainingEntries((actorData as any).training)
+                    if ((actorData as any).archetypes) setSelectedArchetypes((actorData as any).archetypes)
+                    setShowTrainingForm(false)
+                  }}
+                  variant="outline"
+                >
+                  <X className="w-4 h-4 mr-2" /> Cancel
+                </Button>
+              </>
+            ) : (
+              <Button onClick={() => setIsEditing(true)} variant="outline">
+                <Edit className="w-4 h-4 mr-2" /> Edit Profile
+              </Button>
+            )}
             <Button
               onClick={() => {
                 logout()
@@ -796,12 +819,54 @@ export default function ActorProfile() {
                         }
                       }}
                     />
+                    {/* Avatar upload */}
+                    <input
+                      id="avatar-upload-input"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (ev) => {
+                        const file = (ev.target as HTMLInputElement).files?.[0]
+                        if (!file || !user?.id || !token) return
+                        try {
+                          setAvatarUploading(true)
+                          const preview = URL.createObjectURL(file)
+                          setCachedProfileAvatarUrl(preview)
+                          setProfileAvatarLoaded(true)
+                          const form = new FormData()
+                          form.append('file', file)
+                          form.append('title', file.name)
+                          form.append('category', 'headshot')
+                          const res = await fetch(`/api/media/actor/${encodeURIComponent(String(user.id))}/upload`, {
+                            method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+                          })
+                          if (!res.ok) throw new Error(`Upload failed ${res.status}`)
+                          const safeAvatar = `/api/media/avatar/safe/${encodeURIComponent(String(user.id))}?t=${Date.now()}`
+                          await fetch(`/api/actors/${encodeURIComponent(String(user.id))}/profile`, {
+                            method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                            body: JSON.stringify({ profile_image: safeAvatar })
+                          }).catch(() => {})
+                          try { await refreshProfile() } catch {}
+                          setTimeout(() => setAvatarUploading(false), 500)
+                        } catch (e) {
+                          console.error('Avatar change failed', e)
+                          setAvatarUploading(false)
+                          alert('Failed to update profile photo. Please try again.')
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => (document.getElementById('avatar-upload-input') as HTMLInputElement)?.click()}
+                      className="absolute bottom-2 right-2 z-20 bg-white/90 hover:bg-white text-gray-700 rounded-full p-2 shadow"
+                      title={avatarUploading ? 'Uploading…' : 'Change Photo'}
+                      disabled={avatarUploading}
+                    >
+                      <Camera className="w-4 h-4" />
+                    </button>
                   </div>
-                  {isEditing && (
-                    <Button size="sm" variant="outline" className="mt-3">
-                      <Camera className="w-4 h-4 mr-2" />
-                      Change Photo
-                    </Button>
+                  {avatarUploading && (
+                    <div className="mt-2 text-xs text-gray-600">Uploading photo…</div>
                   )}
                 </div>
                 
@@ -1582,7 +1647,12 @@ export default function ActorProfile() {
                       <CardTitle>Professional Experience</CardTitle>
                       <CardDescription>Film, TV, Theater, and Commercial work</CardDescription>
                     </div>
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex items-center gap-2">
+                      {canEditExperience && (
+                        <Button size="sm" variant="outline" onClick={() => setEditExperience(false)}>
+                          <X className="w-4 h-4 mr-1"/>Cancel
+                        </Button>
+                      )}
                       <Button size="sm" variant={canEditExperience ? 'default' : 'outline'} onClick={() => {
                         if (canEditExperience) {
                           setEditExperience(false)
@@ -1627,6 +1697,16 @@ export default function ActorProfile() {
                     </div>
                     <div className="shrink-0 flex items-center gap-2">
                       <CardDescription className="hidden sm:block">Your acting education and specialized training</CardDescription>
+                      {canEditTraining && (
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setEditTraining(false)
+                          // revert local edits
+                          if ((actorData as any).training) setTrainingEntries((actorData as any).training)
+                          setShowTrainingForm(false)
+                        }}>
+                          <X className="w-4 h-4 mr-1"/>Cancel
+                        </Button>
+                      )}
                       <Button size="sm" variant={canEditTraining ? 'default' : 'outline'} onClick={() => {
                         if (canEditTraining) {
                           setEditTraining(false)
@@ -1846,7 +1926,15 @@ export default function ActorProfile() {
                         Select up to 3 archetypes that best represent your casting type
                       </CardDescription>
                     </div>
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex items-center gap-2">
+                      {canEditArchetypes && (
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setEditArchetypes(false)
+                          if ((actorData as any).archetypes) setSelectedArchetypes((actorData as any).archetypes)
+                        }}>
+                          <X className="w-4 h-4 mr-1"/>Cancel
+                        </Button>
+                      )}
                       <Button size="sm" variant={canEditArchetypes ? 'default' : 'outline'} onClick={() => {
                         if (canEditArchetypes) {
                           setEditArchetypes(false)
